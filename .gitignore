@@ -1,2 +1,8 @@
 __pycache__/
-*.pyc
+*.py[cod]
+.DS_Store
+.venv/
+.pytest_cache/
+
+# faro writes nothing else, and this is not in the repository anyway:
+# ~/.faro/pianificati.json, the cache of the schedules the app owns.

@@ -1,36 +1,47 @@
 # faro
 
-Una plancia sola per tutto quello che gira in background sul Mac per conto tuo.
+One board for everything running in the background on your Mac on your behalf.
+
+[Italiano](README.it.md)
 
 ```
 faro
 ```
 
-## Il problema
+Python 3 and the standard library. No dependencies, no installer, no daemon.
 
-Sul portatile girano sei categorie di cose che nessuno guarda insieme:
+## Why this exists
 
-- **launchd** tiene su `com.plancia.server`, e riavvia `dev.stiva.ccd-percorsi` ogni minuto;
-- **i task pianificati di Claude Code** partono da soli e spendono token: `x-account-daily-check`
-  ogni giorno feriale alle 14:01, `gh-dorada-actualizar` martedì e venerdì;
-- **rada** tiene una coda di lavori pesanti, con biglietti e permessi;
-- **le sessioni di Claude Code** vive, ciascuna con la sua memoria;
-- **i server che una sessione avvia**: il ponte agentbridge, il server MCP di plancia,
-  l'app-server di codex;
-- **gli orfani**: un server di anteprima avviato da una sessione chiusa alle tre di notte,
-  che tiene una porta e non lo fermerà mai nessuno.
+Six different kinds of thing can start on a laptop, and each of them is visible from
+somewhere else:
 
-Ognuna di queste è visibile da qualche parte, con un comando diverso e in un formato
-diverso. Insieme non sono visibili da nessuna parte. È così che la macchina finisce in
-swap senza che si sappia chi la stia consumando.
+- **launchd** keeps `com.plancia.server` up and restarts `dev.stiva.ccd-percorsi` every
+  minute;
+- **the scheduled tasks of Claude Code** fire on their own and spend tokens, on a clock
+  that lives inside the application;
+- **rada** holds a queue of heavy jobs, with tickets and permissions;
+- **the live Claude Code sessions**, each with its own memory;
+- **the servers a session starts**: a preview server, an MCP server, a bridge to another
+  agent;
+- **the orphans**: a preview server started by a session that was closed at three in the
+  morning, holding a port, which nobody is ever going to stop.
 
-Misurato la prima volta che `faro` è girato, il 10/08/2026: tre server di anteprima
-orfani su tre porte diverse, il più vecchio da quindici ore, e 3,4 GB di swap su 5 con
-cinque sessioni vive.
+Every one of those is visible somewhere, with a different command and in a different
+format. Together they are visible nowhere. That is how the machine ends up in swap with
+nobody able to say who is eating it.
 
-## Cosa fa
+The first time faro ran, on 10 August 2026, it found three orphaned `python3 -m
+http.server` on three different ports, the oldest of them twenty hours old, on a machine
+that was holding 3.4 GB of its 5 GB of swap with five live sessions.
 
-Legge, e basta. Sei strati su una schermata, con la memoria in testa:
+Nothing in that story is a bug. Sessions are isolated by design, launchd is doing its
+job, and a shell that exits leaves its children to be reparented, which is exactly what
+POSIX says should happen. It only means that on one machine, nobody is counting.
+
+## What it shows
+
+Six layers on one screen, with the memory first, because the memory is the reason you
+came:
 
 ```
 faro   memoria 10.8GB di 16.0GB   compressa 2.3GB   swap 3.4GB di 5.0GB   pageout 110300
@@ -39,87 +50,210 @@ faro   memoria 10.8GB di 16.0GB   compressa 2.3GB   swap 3.4GB di 5.0GB   pageou
        3 processi orfani tengono 10.8MB   ->  faro reap
 ```
 
-## Comandi
+| layer | what is in it |
+|---|---|
+| `permanenti` | always up, session or no session |
+| `pianificati` | will start on their own, on a clock |
+| `rada` | the queue of heavy jobs |
+| `sessioni` | Claude Code alive right now |
+| `servizi` | started by a session, and still held by it |
+| `orfani` | the session is gone, nobody will stop these |
+
+Anything that is merely fine gets one line. Anything wrong gets a line and a mark. The
+screen has to fit in a terminal window without scrolling on a normal day, because a panel
+you have to scroll is a panel you stop reading.
+
+Each layer is read from the source that owns it: launchd from `launchctl` and the plists,
+rada from `~/.rada/state.json`, the tasks from `~/.claude/scheduled-tasks`. faro
+duplicates none of those truths and synchronises with nobody. If rada changes format,
+faro shows one unreadable row and the rest of the board carries on.
+
+## Commands
 
 ```bash
-faro                      # la plancia
-faro --dettagli           # un processo per riga invece di un tipo per riga
-faro vivo                 # la stessa, che si aggiorna ogni 5 secondi
-faro --solo orfani,rada   # solo alcuni strati
-faro orfani               # solo quello che nessuno fermerà più
-faro reap                 # cosa verrebbe chiuso. non chiude niente
-faro reap --esegui        # li chiude
-faro stop <etichetta>     # ferma un job launchd
-faro stop <pid>           # ferma un processo
-faro json                 # tutto, per un altro programma
+faro                      # the board
+faro --dettagli           # one process per row instead of one kind per row
+faro vivo                 # the same, refreshed every 5 seconds
+faro --solo orfani,rada   # only some layers
+faro orfani               # only what nobody is going to stop
+faro reap                 # what would be closed. closes nothing
+faro reap --esegui        # closes them
+faro stop <label>         # stop a launchd job
+faro stop <pid>           # stop a process
+faro gui                  # the same board in the browser, in the foreground
+faro annuncia             # says something only if there is something to say
+faro json                 # everything, for another program
 ```
 
-## Cosa non fa
+## What it does not do
 
-- **Non tiene un demone.** Non c'è niente di `faro` che gira quando non stai guardando.
-  Un pannello di controllo che diventa un'altra cosa da sorvegliare ha già fallito.
-- **Non tiene stato.** L'unico file che scrive è `~/.faro/pianificati.json`, la cache
-  degli orari che l'app di Claude Code non mette su disco. Cancellare `~/.faro` non
-  cambia niente di come funziona la macchina.
-- **Non uccide niente da solo.** `reap` senza `--esegui` è una prova. Nessun timer,
-  nessuna pulizia automatica.
-- **Non esegue niente che legge.** Le righe di comando che mostra sono testo troncato:
-  non passano da una shell e non finiscono in nessun modello.
+- **It keeps no daemon.** There is nothing of faro running while you are not looking. A
+  control panel that becomes one more thing to watch has already failed.
+- **It keeps no state.** The only file it writes is `~/.faro/pianificati.json`, the cache
+  of the schedules the Claude Code application does not put on disk. Deleting `~/.faro`
+  changes nothing about how the machine behaves.
+- **It kills nothing on its own.** `reap` without `--esegui` is a dry run. No timer, no
+  automatic cleanup, nothing that acts while you sleep.
+- **It never runs what it reads.** The command lines on the board are truncated text.
+  They do not go through a shell, they are not executed, and they do not go into a model.
 
-## Cosa può chiudere `faro reap`
+## What `faro reap` will close
 
-Solo processi che passano tutte e quattro queste prove:
+Only processes that pass all four of these tests:
 
-1. il genitore è morto, quindi il processo è stato riadottato da launchd (`ppid == 1`);
-2. launchd non lo supervisiona, verificato contro i pid che launchd stesso dichiara;
-3. o sta nella cartella di lavoro temporanea di una sessione, o è uno dei pochi
-   server che una sessione notoriamente avvia (`http.server`, `vite`, `npm run dev`,
-   il server MCP di plancia, il ponte agentbridge, l'app-server di codex);
-4. e nessuno lo sta usando: ha più di dieci minuti, la sessione del suo scratchpad ha
-   smesso di scrivere, e nessuna sessione viva lavora in quella cartella.
+1. **the parent is gone**, so the process has been reparented to launchd (`ppid == 1`);
+2. **launchd does not supervise it**, checked against the pids launchd itself declares;
+3. **it sits in a session scratchpad, or it is one of the handful of servers a session is
+   known to start** (`http.server`, `vite`, `npm run dev`, and a short list of named
+   ones);
+4. **and nobody is using it**: it is older than ten minutes, the session that owns its
+   scratchpad has stopped writing its transcript, and no live session is working in that
+   directory.
 
-La seconda prova è quella che impedisce a `reap` di toccare `plancia` o `stiva`: un
-servizio supervisionato la fallisce sempre. Ogni prova ha un test che la toglie e
-verifica che il processo smetta di essere un candidato (`tools/prova.py`).
+The second test is the one that keeps `reap` away from supervised services: a job launchd
+keeps alive fails it always, which matters because killing such a job does not stop it, it
+restarts it. Every test has a test that removes it and checks that the process stops being
+a candidate.
 
-La quarta esiste perché **orfano non vuol dire malato**, e perché la prima prova meno di
-quanto sembri: `ppid == 1` dice che è morta la shell, non la sessione. Una sessione che
-avvia un server da un comando Bash perde subito la shell, e il server viene riadottato da
-launchd mentre lei è viva e lo sta usando. Senza la quarta prova, `faro` il 10/08/2026
-avrebbe proposto di chiudere un server sulla porta 8777 che tre sessioni aperte da mezz'ora
-stavano usando. Quello che fallisce solo la quarta prova non compare fra gli orfani: torna
-fra i servizi, con scritto accanto perché.
+The fourth exists because **an orphan is not necessarily sick**, and because the first
+test proves less than it looks like. `ppid == 1` says the shell died, not the session. A
+session that starts a server from a Bash command loses the shell immediately, and the
+server is reparented to launchd while the session is alive and using it. Without the
+fourth test, on 10 August 2026 faro would have offered to close a server on port 8777
+that three sessions, open for half an hour, were using. Whatever fails only the fourth
+test does not appear among the orphans at all: it goes back to the services, with the
+reason written next to it.
 
-La lista viene ricalcolata nel momento in cui `reap --esegui` parte, e mai presa da una
-schermata di prima: un pid stampato dieci minuti fa può essere stato riusato da un altro
-processo, ed è esattamente così che uno strumento di pulizia uccide la cosa sbagliata.
+The list is recomputed at the moment `reap --esegui` starts, and never taken from an
+earlier screen. A pid printed ten minutes ago may since have been reused by something
+else, and a stale pid is exactly how a cleanup tool kills the wrong thing.
 
-## Gli orari che faro non può leggere
+The reasoning behind each test, and what happens when you remove it, is in
+[docs/four-tests.md](docs/four-tests.md).
 
-Di un task pianificato di Claude Code, su disco c'è solo il prompt. La riga cron sta
-dentro l'applicazione. `faro` lo dice invece di inventarselo, e una sessione che ha lo
-strumento `scheduled-tasks` può passargliela una volta:
+## Never date a scheduled job by its log
+
+The first version of faro decided whether a scheduled job was healthy from the
+modification time of its log. Two jobs on this machine looked broken that way and neither
+was: `dev.stiva.ccd-percorsi` fires every minute and had **1083 runs** against a log
+untouched for **fourteen hours**, and `it.nerln.vesuvius-formwatch` had an empty stderr
+from five days earlier and had in fact run three hours before.
+
+A log is written when a job has something to say, which is not the same as when it ran.
+`launchctl print` counts the runs and gives the last exit code, and that is what faro
+shows. Neither `launchctl list` nor `launchctl print` gives a timestamp, so faro never
+claims to know when a scheduled job last ran. The honest thing it can say is how many
+times.
+
+## The schedules faro cannot read
+
+For a scheduled task of Claude Code, only the prompt is on disk. The cron line lives
+inside the application. faro says so instead of guessing, and a session that has the
+`scheduled-tasks` tool can hand the list over once:
 
 ```bash
-faro pianifica --importa lista.json     # l'uscita di list_scheduled_tasks
+faro pianifica --importa lista.json     # the output of list_scheduled_tasks
+faro pianifica                          # what is known now
 ```
 
-## Installazione
+Until then the schedule column reads `orario noto solo all'app`, the schedule is known
+only to the application.
 
-Python 3, niente altro. Nessuna dipendenza, nessun installatore.
+## The same board in a browser
 
 ```bash
+faro gui
+```
+
+It stays in the foreground, opens the browser, and dies with ctrl-c or with the terminal
+that hosts it. No fork, no plist, no restart, no file written. If that process goes away,
+nothing of faro is left running.
+
+The page is one file with the CSS and the JS inlined: no CDN, no external fonts, no
+libraries. It works identically with the network unplugged, which is also the moment you
+want to see what is running.
+
+Most of that file is about one problem. Any web page, open in another tab, can make
+requests to 127.0.0.1, and binding to localhost is not a defence, it is only an address.
+A GUI that accepts a POST which closes processes is a GUI a hostile site can use to close
+your processes while you touch nothing. Three walls, each standing on its own:
+
+1. **A random token per launch.** It is in the URL faro opens, the page puts it in
+   sessionStorage and strips it from the address bar, and from then on sends it in a
+   header on every call. Another site cannot read it: the same-origin policy keeps it out
+   of our page and our storage. The comparison is constant time.
+2. **Origin on the list, or nothing.** An HTML form can send a cross-site POST without
+   the browser asking permission, but it cannot add a header, and its request arrives
+   with the sender's Origin. A fetch that wanted the header would trigger a preflight,
+   and the preflight gets 403 with no CORS headers at all, so the browser stops before
+   trying.
+3. **Host on the list.** This is the one against DNS rebinding, the only attack where the
+   browser considers the attacker same-origin with us and can therefore add whatever
+   headers it likes. A name that resolves to 127.0.0.1 still arrives with its own Host,
+   and that Host is refused.
+
+The actions are a subset of the CLI, never a superset: the page can stop a pid, and a
+launchd label has to be stopped from the terminal. A button in a page that runs
+`launchctl bootout` is power that is not needed here. `reap` from the page runs the dry
+run first and shows you that exact list before anything is closed.
+
+And the page does not reimplement the four tests. Its actions call the same `cmd_reap`
+and `cmd_stop` the CLI runs, and capture their output. A GUI with its own copy of the
+tests is a GUI that one day closes what the CLI protects.
+
+## Saying it once, and only when it matters
+
+```bash
+faro annuncia --prova    # what it would say, without notifying anything
+faro annuncia            # a macOS notification, only if there is something to say
+```
+
+Two rules, and they are the whole design of that file:
+
+**If there is nothing to say, it says nothing.** A notification that always arrives is a
+notification you learn to ignore, and from that moment it is useless even when it is
+telling the truth. The empty answer is the normal case.
+
+**It says, and that is all.** It kills nothing, offers to kill nothing, opens nothing.
+The decision stays with whoever reads it.
+
+The judgement lives in one function, shared by the notification and by the red band in
+the GUI, so that the page and the notification cannot one day disagree. The text goes to
+`osascript` through argv and never into the AppleScript source: a process name comes from
+a plist or a command line, which is data faro does not control, and concatenating it into
+a script would be the most convenient way to make a machine that was only looking run
+something.
+
+## Install
+
+Python 3 and nothing else.
+
+```bash
+git clone https://github.com/nerln/faro.git ~/dev/faro
 ln -s ~/dev/faro/bin/faro ~/.local/bin/faro
 ```
 
-## Test
+macOS only. It reads `ps`, `lsof`, `launchctl`, `vm_stat` and `sysctl`, and it assumes
+launchd. On anything else it would have to be a different program.
+
+## Tests
 
 ```bash
 python3 tools/prova.py
 ```
 
-## In famiglia
+53 checks, under a second, no dependencies and no processes killed. The ones that count
+are `Orfani`: that is the only place in faro where a reading mistake becomes a dead
+process. Each of the four tests has a case that removes it and checks that the process
+stops being a candidate, and the GUI has cases for the token, the Origin, the Host, the
+preflight and the absence of any request to the network in the page.
 
-`rada` conta la memoria, `plancia` conta il lavoro, `faro` conta i processi. Nessuno dei
-tre sa delle cose degli altri, e `faro` li legge tutti dalla loro fonte senza chiedergli
-niente: se `faro` sparisce, `rada` e `plancia` non se ne accorgono.
+## In the family
+
+`rada` counts memory, `plancia` counts work, `faro` counts processes. None of the three
+knows anything about the others, and faro reads all of them from their own source without
+asking them for anything: if faro disappears, rada and plancia do not notice.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).

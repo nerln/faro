@@ -9,6 +9,8 @@
   faro stop <cosa>     ferma un servizio launchd o un pid
   faro json            tutto, per un altro programma
   faro pianifica       aggiorna la cache degli orari dei task di Claude Code
+  faro gui             la stessa plancia nel browser, in primo piano
+  faro annuncia        se c'e' qualcosa da sapere lo dice, se no tace
 """
 
 import argparse
@@ -226,6 +228,27 @@ def cmd_pianifica(args):
     return 0
 
 
+def cmd_gui(args):
+    """La plancia nel browser, senza smettere di essere un comando.
+
+    Il server sta in primo piano e muore con questo processo: nessun fork,
+    nessun plist, niente che resti acceso quando il terminale se ne va
+    (CLAUDE.md, invariante 1).
+
+    Gli passa questo stesso modulo come `cli`: le azioni della pagina
+    chiamano `cmd_reap` e `cmd_stop` qui sopra e non una loro copia, cosi' le
+    quattro prove restano scritte in un posto solo.
+    """
+    from faro import web
+    return web.serve(cli=sys.modules[__name__], porta=args.porta,
+                     apri=not args.senza_browser)
+
+
+def cmd_annuncia(args):
+    from faro import annuncio
+    return annuncio.main(args)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="faro", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -263,6 +286,20 @@ def main(argv=None):
     s = sub.add_parser("pianifica", help="orari dei task pianificati")
     s.add_argument("--importa", metavar="FILE", help="json di list_scheduled_tasks, - per stdin")
     s.set_defaults(func=cmd_pianifica)
+
+    s = sub.add_parser("gui", help="la plancia nel browser, in primo piano")
+    s.add_argument("--porta", type=int, default=0,
+                   help="di norma una porta libera scelta al momento")
+    s.add_argument("--senza-browser", action="store_true",
+                   help="non aprire il browser, stampa solo l'indirizzo")
+    s.set_defaults(func=cmd_gui)
+
+    s = sub.add_parser("annuncia", help="notifica solo se c'e' qualcosa da dire")
+    s.add_argument("--prova", action="store_true",
+                   help="dice cosa direbbe, senza notificare niente")
+    s.add_argument("--senza-boa", action="store_true",
+                   help="non scrivere sulla lavagna condivisa")
+    s.set_defaults(func=cmd_annuncia)
 
     # `faro` on its own, and `faro --dettagli`, mean `faro stato`. The board is
     # the thing you want nine times out of ten and should not need a noun.

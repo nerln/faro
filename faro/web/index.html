@@ -1,0 +1,81 @@
+<!doctype html>
+<!--
+  La pagina di `faro gui`. Un file solo, nessuna rete.
+
+  Il link e lo script qui sotto vengono sostituiti con il loro contenuto da
+  faro/web.py: qui restano separati perche' si modificano meglio, e perche'
+  aprendo questo file da disco si vede comunque la pagina.
+
+  La CSP non e' decorazione: dichiara che questa pagina non puo' chiedere
+  niente a nessuno tranne che a se stessa. Se un giorno qualcuno ci mette
+  dentro un font di Google, la pagina smette di funzionare invece di iniziare
+  a parlare con l'esterno di quello che gira su questo Mac.
+-->
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<!-- frame-ancestors non sta qui: da un meta il browser lo ignora e si lamenta.
+     Contro l'incorniciamento risponde l'intestazione X-Frame-Options: DENY,
+     che web.py manda su ogni risposta. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; connect-src 'self'; style-src 'unsafe-inline';
+               script-src 'unsafe-inline'; img-src data:; form-action 'none';
+               base-uri 'none'">
+<title>faro</title>
+<link rel="stylesheet" href="stile.css">
+</head>
+<body>
+
+<header class="testata">
+  <div class="marchio">
+    <svg class="segno" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3 L15 21 L9 21 Z" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <circle cx="12" cy="6.6" r="1.7" fill="currentColor"/>
+      <path d="M4 4.2 L8.4 6.2 M20 4.2 L15.6 6.2" stroke="currentColor"
+            stroke-width="1.2" stroke-linecap="round" opacity=".55"/>
+      <path d="M7.6 14.5 H16.4" stroke="currentColor" stroke-width="1" opacity=".5"/>
+    </svg>
+    <div>
+      <b>faro</b>
+      <span>cosa sta girando per conto tuo</span>
+    </div>
+  </div>
+  <div class="polso">
+    <span class="punto" id="punto"></span>
+    <span id="battito">lettura in corso</span>
+    <button class="ghost" id="pausa" type="button">pausa</button>
+  </div>
+</header>
+
+<main>
+  <section class="bento" id="memoria" aria-label="memoria"></section>
+  <section id="avvisi" aria-live="polite"></section>
+  <nav class="indice" id="indice" aria-label="strati"></nav>
+  <section id="strati"></section>
+  <p class="coda">
+    questa pagina vive finche' vive il terminale che l'ha aperta.
+    faro non lascia niente in esecuzione quando esci.
+  </p>
+</main>
+
+<!-- I bottoni chiudono il dialogo da javascript e non con un form: cosi' la
+     pagina non ha nessun modulo, e `form-action 'none'` nella CSP resta una
+     regola che non puo' dare fastidio a niente. -->
+<dialog id="conferma">
+  <h2 id="conferma-titolo"></h2>
+  <p id="conferma-testo"></p>
+  <pre id="conferma-pre" hidden></pre>
+  <p class="conseguenza" id="conferma-conseguenza"></p>
+  <menu>
+    <button class="ghost" type="button" id="conferma-no">annulla</button>
+    <button class="pericolo" type="button" id="conferma-si"></button>
+  </menu>
+</dialog>
+
+<div class="nota" id="nota" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>

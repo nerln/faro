@@ -311,5 +311,250 @@ class Letture(unittest.TestCase):
             self.assertIn(r["strato"], board.ORDER)
 
 
+# --------------------------------------------------------- la gui e l'annuncio
+#
+# La prova che conta qui e' una sola: una pagina web qualunque puo' fare
+# richieste a 127.0.0.1, quindi una POST senza gettone non deve poter arrivare
+# fino alle funzioni che chiudono processi. Il finto `bin/faro` qui sotto serve
+# esattamente a misurare questo: non basta che la risposta sia 403, deve non
+# essere stata chiamata nessuna azione.
+
+import json  # noqa: E402
+import threading  # noqa: E402
+import urllib.error  # noqa: E402
+import urllib.request  # noqa: E402
+
+from faro import annuncio, web  # noqa: E402
+
+
+class _CliFinto:
+    """Un `bin/faro` finto: un test non deve poter fermare niente davvero."""
+
+    def __init__(self):
+        self.chiamate = []
+
+    def cmd_reap(self, args):
+        self.chiamate.append(("reap", args.esegui, args.piu_vecchi_di))
+        print("niente da chiudere.")
+        return 0
+
+    def cmd_stop(self, args):
+        self.chiamate.append(("stop", args.cosa, args.per_sempre))
+        print(f"pid {args.cosa}: chiuso.")
+        return 0
+
+
+def _chiama(porta, percorso, dati=None, gettone=None, origine=None, host=None):
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{porta}{percorso}",
+        data=json.dumps(dati).encode() if dati is not None else None,
+        method="POST" if dati is not None else "GET")
+    if gettone:
+        req.add_header("X-Faro-Token", gettone)
+    if origine:
+        req.add_header("Origin", origine)
+    if host:
+        req.add_header("Host", host)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return r.status, r.read().decode(), dict(r.headers)
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode(), dict(e.headers)
+
+
+class Gui(unittest.TestCase):
+    """I tre muri: gettone, Origin, Host."""
+
+    def setUp(self):
+        self.cli = _CliFinto()
+        self.server, self.gettone = web.crea_server(cli=self.cli)
+        self.porta = self.server.server_address[1]
+        self.thread = threading.Thread(
+            target=self.server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+
+    def test_una_post_senza_gettone_e_403_e_non_fa_niente(self):
+        codice, _, _ = _chiama(self.porta, "/api/reap", {"esegui": True})
+        self.assertEqual(codice, 403)
+        # Il 403 da solo non basterebbe: la cosa da provare e' che nessuna
+        # azione sia partita prima di rispondere.
+        self.assertEqual(self.cli.chiamate, [])
+
+    def test_una_post_col_gettone_arriva_alla_stessa_funzione_della_cli(self):
+        codice, corpo, _ = _chiama(self.porta, "/api/reap", {"esegui": True},
+                                   gettone=self.gettone)
+        self.assertEqual(codice, 200)
+        self.assertEqual(self.cli.chiamate, [("reap", True, 0)])
+        self.assertIn("niente da chiudere", json.loads(corpo)["testo"])
+
+    def test_un_gettone_sbagliato_non_passa(self):
+        codice, _, _ = _chiama(self.porta, "/api/ferma", {"pid": 999999},
+                               gettone="x" * 43)
+        self.assertEqual(codice, 403)
+        self.assertEqual(self.cli.chiamate, [])
+
+    def test_un_origin_estraneo_non_passa_nemmeno_col_gettone(self):
+        codice, _, _ = _chiama(self.porta, "/api/reap", {"esegui": True},
+                               gettone=self.gettone, origine="https://evil.example")
+        self.assertEqual(codice, 403)
+        self.assertEqual(self.cli.chiamate, [])
+
+    def test_un_host_estraneo_non_passa_nemmeno_col_gettone(self):
+        """Il dns rebinding e' l'unico caso in cui il browser lo lascerebbe fare."""
+        codice, _, _ = _chiama(self.porta, "/api/reap", {"esegui": True},
+                               gettone=self.gettone, host="evil.example")
+        self.assertEqual(codice, 403)
+        self.assertEqual(self.cli.chiamate, [])
+
+    def test_la_preflight_non_passa_e_non_c_e_nessuna_intestazione_cors(self):
+        req = urllib.request.Request(f"http://127.0.0.1:{self.porta}/api/reap",
+                                     method="OPTIONS")
+        req.add_header("Origin", "https://evil.example")
+        req.add_header("Access-Control-Request-Method", "POST")
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                codice, intestazioni = r.status, dict(r.headers)
+        except urllib.error.HTTPError as e:
+            codice, intestazioni = e.code, dict(e.headers)
+        self.assertEqual(codice, 403)
+        for nome in intestazioni:
+            self.assertFalse(nome.lower().startswith("access-control"))
+
+    def test_lo_stato_non_si_legge_senza_gettone(self):
+        self.assertEqual(_chiama(self.porta, "/api/stato")[0], 403)
+        self.assertEqual(_chiama(self.porta, "/api/stato", gettone=self.gettone)[0], 200)
+
+    def test_la_pagina_si_prende_senza_gettone_perche_non_contiene_niente(self):
+        codice, corpo, intestazioni = _chiama(self.porta, "/")
+        self.assertEqual(codice, 200)
+        self.assertIn("<title>faro</title>", corpo)
+        self.assertEqual(intestazioni.get("X-Frame-Options"), "DENY")
+
+    def test_ferma_accetta_solo_un_pid_e_non_un_etichetta_launchd(self):
+        """Un bottone che fa `launchctl bootout` e' potere che qui non serve."""
+        codice, _, _ = _chiama(self.porta, "/api/ferma", {"pid": "com.plancia.server"},
+                               gettone=self.gettone)
+        self.assertEqual(codice, 400)
+        self.assertEqual(self.cli.chiamate, [])
+
+    def test_ferma_passa_il_pid_alla_stop_della_cli(self):
+        codice, _, _ = _chiama(self.porta, "/api/ferma", {"pid": 999999},
+                               gettone=self.gettone)
+        self.assertEqual(codice, 200)
+        self.assertEqual(self.cli.chiamate, [("stop", "999999", False)])
+
+
+class PaginaSola(unittest.TestCase):
+    def test_un_percorso_ostile_non_arriva_intero_sul_terminale(self):
+        """Chi viene respinto sceglie il percorso, e il rifiuto lo legge un
+        terminale: una sequenza di escape ansi ci scriverebbe quello che vuole."""
+        self.assertEqual(web._pulito("/api/\x1b[2J\x1b[31mciao"), "/api/?[2J?[31mciao")
+        self.assertLessEqual(len(web._pulito("x" * 500)), 70)
+
+    def test_la_pagina_non_chiede_niente_a_nessuno(self):
+        p = web.pagina()
+        self.assertIsNone(web._ESTERNO.search(p))
+        self.assertIn("<style>", p)
+        self.assertNotIn('<script src=', p)
+
+    def test_le_azioni_della_gui_sono_le_funzioni_di_bin_faro(self):
+        """Se un domani divergono, la gui chiude quello che la cli protegge."""
+        cli = web._cli_modulo()
+        self.assertTrue(callable(cli.cmd_reap))
+        self.assertTrue(callable(cli.cmd_stop))
+        # La quinta invariante vive li' dentro e la gui la eredita.
+        self.assertTrue(callable(cli._my_ancestors))
+
+    def test_le_parole_degli_strati_sono_quelle_della_plancia(self):
+        nomi = [s["nome"] for s in web._strati()]
+        self.assertEqual(nomi, board.ORDER)
+
+
+def _snap(righe=(), **memoria):
+    base = {"total": 16 * 1024 ** 3, "free": 8 * 1024 ** 3, "used": 8 * 1024 ** 3,
+            "compressed": 0, "swap_total": 5 * 1024 ** 3, "swap_used": 0, "pageouts": 0}
+    base.update(memoria)
+    return {"ts": 0, "memoria": base, "righe": list(righe)}
+
+
+def _riga(strato, **kw):
+    r = {"strato": strato, "id": "x", "nome": "cosa", "stato": "", "pid": None,
+         "rss": 0, "eta": 0, "quando": "", "dove": "", "dettaglio": "", "azione": None,
+         "allarme": False}
+    r.update(kw)
+    return r
+
+
+class Annuncio(unittest.TestCase):
+    """Una notifica che arriva sempre e' una notifica che si impara a ignorare."""
+
+    def test_su_una_macchina_tranquilla_non_si_dice_niente(self):
+        self.assertEqual(annuncio.forti(annuncio.valuta(_snap())), [])
+
+    def test_gli_orfani_valgono_una_notifica(self):
+        righe = [_riga("orfani", stato="orfano", pid=900, rss=11 * 1024 ** 2, eta=54000)]
+        notizie = annuncio.forti(annuncio.valuta(_snap(righe)))
+        self.assertEqual(len(notizie), 1)
+        self.assertIn("1 processo orfano", notizie[0]["titolo"])
+        self.assertIn("11.0MB", notizie[0]["testo"])
+
+    def test_lo_swap_sopra_i_due_giga_vale_una_notifica_sotto_no(self):
+        alto = annuncio.valuta(_snap(swap_used=3 * 1024 ** 3))
+        self.assertEqual([n["gravita"] for n in alto], ["alta"])
+        basso = annuncio.valuta(_snap(swap_used=700 * 1024 ** 2))
+        self.assertEqual([n["gravita"] for n in basso], ["media"])
+        self.assertEqual(annuncio.forti(basso), [])
+
+    def test_un_job_pianificato_uscito_male_vale_una_notifica(self):
+        righe = [_riga("pianificati", nome="dev.stiva.ccd-percorsi", allarme=True,
+                       dettaglio="12 esecuzioni dal caricamento  ·  ULTIMA USCITA 78")]
+        notizie = annuncio.forti(annuncio.valuta(_snap(righe)))
+        self.assertEqual(len(notizie), 1)
+        self.assertIn("dev.stiva.ccd-percorsi", notizie[0]["titolo"])
+        self.assertIn("78", notizie[0]["testo"])
+
+    def test_un_permanente_fermo_vale_una_notifica(self):
+        righe = [_riga("permanenti", nome="com.plancia.server", stato="caricato ma fermo",
+                       allarme=True)]
+        self.assertEqual(len(annuncio.forti(annuncio.valuta(_snap(righe)))), 1)
+
+    def test_il_testo_non_entra_mai_nel_sorgente_applescript(self):
+        """Un nome arriva da un plist o da una riga di comando: e' dato ostile."""
+        cattivo = 'x" & (do shell script "rm -rf ~") & "'
+        cmd = annuncio.comando_notifica("faro", cattivo, "corpo")
+        self.assertEqual(cmd[0], "osascript")
+        sorgente = cmd[2]
+        self.assertNotIn("do shell script", sorgente)
+        self.assertIn("item 2 of argv", sorgente)
+        self.assertIn(cattivo, cmd[3:])
+
+    def test_il_testo_di_una_notifica_e_una_riga_sola_e_corta(self):
+        sporco = "una\nriga\x00con dentro di tutto " + "a" * 400
+        pulito = annuncio._pulisci(sporco)
+        self.assertNotIn("\n", pulito)
+        self.assertNotIn("\x00", pulito)
+        self.assertLessEqual(len(pulito), annuncio.MAX_TESTO)
+
+    def test_boa_non_e_una_dipendenza(self):
+        vero = annuncio.BOA
+        try:
+            annuncio.BOA = "/non/esiste/da/nessuna/parte/boa"
+            self.assertFalse(annuncio.scrivi_su_boa("ciao"))
+        finally:
+            annuncio.BOA = vero
+
+    def test_la_gui_e_la_notifica_dicono_la_stessa_cosa(self):
+        """Un solo giudizio: se divergono, uno dei due mente."""
+        righe = [_riga("orfani", stato="orfano", pid=900, rss=1024, eta=4000)]
+        snap = _snap(righe, swap_used=3 * 1024 ** 3)
+        dalla_pagina = web.stato(snap)["notizie"]
+        self.assertEqual(dalla_pagina, annuncio.valuta(snap))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -1,0 +1,331 @@
+/* faro, la pagina.
+ *
+ * Stessa idea di plancia: un quadro strumenti. Numeri leggibili di sbieco,
+ * righe sottili che dividono senza pesare, un colore solo che chiede
+ * attenzione e che quindi non si usa per decorare. Serif per i titoli,
+ * monospaziato per i numeri, sans per il resto.
+ *
+ * Chiaro e scuro seguono il sistema e basta: non c'e' un interruttore, perche'
+ * un interruttore e' una preferenza da salvare, e questa pagina non salva
+ * niente.
+ */
+
+:root {
+  --ink-0: #090c11;
+  --ink-1: #0e1219;
+  --ink-2: #141922;
+  --ink-3: #1b212c;
+  --line: #1e2530;
+  --line-forte: #2b3441;
+  --testo: #e7ebf2;
+  --testo-2: #9aa4b4;
+  --testo-3: #626d7e;
+
+  --ambra: #e8934e;
+  --ambra-tenue: rgba(232, 147, 78, .13);
+  --ambra-linea: rgba(232, 147, 78, .32);
+  --buono: #5bb89b;
+  --buono-tenue: rgba(91, 184, 155, .14);
+  --giallo: #d9a441;
+  --giallo-tenue: rgba(217, 164, 65, .14);
+  --rosso: #dd6a5f;
+  --rosso-tenue: rgba(221, 106, 95, .13);
+  --rosso-linea: rgba(221, 106, 95, .34);
+
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+  --r-tag: 3px; --r-card: 10px; --r-panel: 14px; --r-pill: 999px;
+  --ombra: 0 1px 1px rgba(0,0,0,.4), 0 2px 6px rgba(0,0,0,.24);
+  --ombra-alta: 0 2px 4px rgba(0,0,0,.34), 0 18px 48px rgba(0,0,0,.44);
+
+  --molla: cubic-bezier(.25, 1, .5, 1);
+  --svelto: 140ms;
+
+  --serif: ui-serif, "New York", "Iowan Old Style", Palatino, Georgia, serif;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+
+  --sfondo: var(--ink-0);
+  --pannello: var(--ink-2);
+  --pannello-2: var(--ink-3);
+  --bordo: var(--line);
+  --fioco: var(--testo-3);
+  --spento: var(--testo-2);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --ink-0: #f4f5f7;
+    --ink-1: #ffffff;
+    --ink-2: #ffffff;
+    --ink-3: #eef0f4;
+    --line: #e2e5ec;
+    --line-forte: #ccd2dc;
+    --testo: #121620;
+    --testo-2: #5b6474;
+    --testo-3: #8b93a2;
+    --ambra: #a95c14;
+    --ambra-tenue: rgba(169, 92, 20, .10);
+    --ambra-linea: rgba(169, 92, 20, .28);
+    --buono: #1c7f62;
+    --buono-tenue: rgba(28, 127, 98, .10);
+    --giallo: #8a6512;
+    --giallo-tenue: rgba(138, 101, 18, .10);
+    --rosso: #b8433a;
+    --rosso-tenue: rgba(184, 67, 58, .09);
+    --rosso-linea: rgba(184, 67, 58, .30);
+    --ombra: 0 1px 1px rgba(16,24,40,.04), 0 2px 6px rgba(16,24,40,.06);
+    --ombra-alta: 0 2px 4px rgba(16,24,40,.06), 0 18px 48px rgba(16,24,40,.12);
+    color-scheme: light;
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { background: var(--sfondo); }
+body {
+  margin: 0 auto; max-width: 1180px; padding: 0 var(--s5) 64px;
+  font-family: var(--sans); font-size: 13.5px; line-height: 1.5;
+  color: var(--testo); background: var(--sfondo);
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
+h1, h2, h3 { margin: 0; font-weight: 400; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ambra); outline-offset: 2px; border-radius: 3px; }
+
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 500; }
+.etichetta {
+  font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--fioco); font-weight: 600;
+}
+
+/* ------------------------------------------------------------- testata */
+.testata {
+  display: flex; align-items: center; gap: var(--s4);
+  padding: var(--s5) 0 var(--s4);
+  position: sticky; top: 0; z-index: 10;
+  background: color-mix(in srgb, var(--sfondo) 90%, transparent);
+  backdrop-filter: saturate(1.6) blur(14px);
+  border-bottom: 1px solid var(--bordo);
+  margin-bottom: var(--s5);
+}
+.marchio { display: flex; align-items: center; gap: var(--s3); }
+.segno { width: 26px; height: 26px; color: var(--ambra); flex: none; }
+.marchio b {
+  display: block; font-family: var(--serif); font-size: 20px; font-weight: 400;
+  letter-spacing: -.02em; line-height: 1.05;
+}
+.marchio span {
+  display: block; font-size: 10px; color: var(--fioco);
+  letter-spacing: .06em; text-transform: uppercase; margin-top: 2px;
+}
+.polso {
+  margin-left: auto; display: flex; align-items: center; gap: var(--s3);
+  font-size: 11.5px; color: var(--fioco); font-family: var(--mono);
+}
+.punto {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--buono);
+  box-shadow: 0 0 0 3px var(--buono-tenue); flex: none;
+}
+.punto.lavora { background: var(--ambra); box-shadow: 0 0 0 3px var(--ambra-tenue);
+  animation: battito 1.1s var(--molla) infinite; }
+.punto.ferma { background: var(--fioco); box-shadow: none; }
+.punto.rotto { background: var(--rosso); box-shadow: 0 0 0 3px var(--rosso-tenue); }
+@keyframes battito { 50% { opacity: .25; } }
+
+button.ghost {
+  background: transparent; border: 1px solid var(--bordo); color: var(--spento);
+  padding: 4px 11px; border-radius: var(--r-pill); cursor: pointer; font-size: 12px;
+  font-family: var(--sans);
+  transition: border-color var(--svelto) var(--molla), color var(--svelto) var(--molla);
+}
+button.ghost:hover { color: var(--testo); border-color: var(--line-forte); }
+button.ghost:active { transform: scale(.97); }
+button.pericolo {
+  background: var(--rosso); border: 0; color: #fff;
+  padding: 6px 14px; border-radius: var(--r-pill); cursor: pointer;
+  font-weight: 600; font-size: 12.5px; font-family: var(--sans);
+  transition: filter var(--svelto) var(--molla), transform var(--svelto) var(--molla);
+}
+button.pericolo:hover { filter: brightness(1.08); }
+button.pericolo:active { transform: scale(.97); }
+button[disabled] { opacity: .45; cursor: default; }
+
+/* --------------------------------------------------------------- bento
+   Tessere di misure diverse: quattro quadrati identici sono il segno piu'
+   riconoscibile di una pagina messa insieme in fretta. */
+.bento {
+  display: grid; gap: var(--s3); margin-bottom: var(--s4);
+  grid-template-columns: 1.5fr 1fr 1fr 1fr;
+}
+@media (max-width: 860px) { .bento { grid-template-columns: 1fr 1fr; } }
+.cella {
+  background: var(--pannello); border: 1px solid var(--bordo);
+  border-radius: var(--r-card); padding: var(--s4);
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.cella .k { font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--fioco); font-weight: 600; }
+.cella .v {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 28px; font-weight: 500; letter-spacing: -.03em; line-height: 1.2;
+}
+.cella .v small { font-size: 13px; color: var(--fioco); font-weight: 400; margin-left: 3px; }
+.cella .n { font-size: 11.5px; color: var(--fioco); margin-top: auto; padding-top: var(--s2); }
+.cella.allarme { border-color: var(--rosso-linea); background: var(--rosso-tenue); }
+.cella.allarme .v { color: var(--rosso); }
+.cella.attenzione .v { color: var(--giallo); }
+
+/* la barra della memoria: usata piena, compressa a righe */
+.barra {
+  height: 5px; border-radius: 3px; background: var(--pannello-2);
+  display: flex; overflow: hidden; margin-top: var(--s2);
+}
+.barra i { display: block; height: 100%; }
+.barra .usata { background: var(--ambra); opacity: .85; }
+.barra .compressa {
+  background: repeating-linear-gradient(135deg, var(--ambra) 0 2px, transparent 2px 5px);
+  opacity: .7;
+}
+.barra .swap { background: var(--rosso); }
+
+/* -------------------------------------------------------------- avvisi */
+.avviso {
+  display: flex; gap: var(--s3); align-items: baseline;
+  border: 1px solid var(--rosso-linea); background: var(--rosso-tenue);
+  border-radius: var(--r-card); padding: var(--s3) var(--s4); margin-bottom: var(--s2);
+}
+.avviso.media { border-color: var(--bordo); background: var(--giallo-tenue); }
+.avviso b { font-weight: 600; color: var(--rosso); white-space: nowrap; }
+.avviso.media b { color: var(--giallo); }
+.avviso span { color: var(--spento); }
+.avviso .spinta { margin-left: auto; }
+#avvisi { margin-bottom: var(--s4); }
+
+/* -------------------------------------------------------------- indice */
+.indice {
+  display: flex; flex-wrap: wrap; gap: var(--s1); margin-bottom: var(--s5);
+  border-top: 1px solid var(--bordo); padding-top: var(--s3);
+}
+.indice a {
+  display: flex; align-items: baseline; gap: 6px; text-decoration: none;
+  color: var(--spento); font-size: 12px; padding: 4px 10px; border-radius: var(--r-pill);
+  transition: background var(--svelto) var(--molla), color var(--svelto) var(--molla);
+}
+.indice a:hover { background: var(--pannello-2); color: var(--testo); }
+.indice a em {
+  font-style: normal; font-family: var(--mono); font-size: 11px; color: var(--fioco);
+}
+.indice a.vuoto { opacity: .4; }
+.indice a.grave em, .indice a.grave { color: var(--rosso); }
+
+/* -------------------------------------------------------------- strati */
+.strato { margin-bottom: var(--s6); }
+.strato > header {
+  display: flex; align-items: baseline; gap: var(--s3);
+  padding-bottom: var(--s2); border-bottom: 1px solid var(--bordo); margin-bottom: var(--s2);
+}
+.strato > header h2 {
+  font-family: var(--serif); font-size: 19px; letter-spacing: -.02em;
+}
+.strato > header p { margin: 0; color: var(--fioco); font-size: 12px; }
+.strato > header .quanti { margin-left: auto; font-family: var(--mono); font-size: 11px;
+  color: var(--fioco); }
+.strato.orfani > header h2 { color: var(--rosso); }
+
+.riga {
+  display: grid; align-items: baseline; gap: var(--s3);
+  grid-template-columns: 10px minmax(160px, 1.15fr) 52px 66px 118px minmax(0, 1.9fr) 74px;
+  padding: 7px var(--s2); border-radius: 7px;
+  border-bottom: 1px solid transparent;
+}
+.riga:hover { background: var(--pannello); }
+.riga + .riga { border-top: 1px solid color-mix(in srgb, var(--bordo) 60%, transparent); }
+/* Sotto i 900px le sette colonne non ci stanno piu' e diventano una griglia
+   che si accavalla. Meglio smettere di fingere che sia una tabella: nome e
+   bottone sulla prima riga, i numeri sotto, il dettaglio per intero in fondo. */
+@media (max-width: 900px) {
+  .riga { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+  .riga .stato { order: 0; }
+  .riga .nome { order: 1; flex: 1 1 auto; }
+  .riga .azione { order: 2; margin-left: auto; }
+  .riga .eta, .riga .ram, .riga .quando { order: 3; text-align: left; }
+  .riga .dett { order: 4; flex: 1 1 100%; white-space: normal; }
+}
+@media (max-width: 700px) {
+  .avviso { flex-wrap: wrap; }
+  .avviso b { white-space: normal; }
+  .avviso span { flex: 1 1 100%; }
+  .cella .v { font-size: 22px; }
+}
+
+.riga .stato {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--fioco);
+  align-self: center; justify-self: center;
+}
+.riga .stato.acceso { background: var(--buono); }
+.riga .stato.giallo { background: var(--giallo); }
+.riga .stato.rosso { background: var(--rosso); box-shadow: 0 0 0 3px var(--rosso-tenue); }
+.riga .nome { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.riga .nome em {
+  font-style: normal; font-family: var(--mono); font-size: 11px; color: var(--fioco);
+  margin-left: 6px;
+}
+.riga .eta, .riga .ram {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 12px; color: var(--spento); text-align: right;
+}
+.riga .quando { font-size: 12px; color: var(--spento); }
+.riga .dett {
+  font-size: 11.5px; color: var(--fioco); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* min-width: 0 anche qui, se no un contenuto che non si spezza allarga la
+   colonna e la riga sfonda la pagina di lato. */
+.riga .azione { text-align: right; min-width: 0; }
+.riga .azione button { white-space: nowrap; }
+.riga.grave .nome { color: var(--rosso); }
+.vuoto-strato { color: var(--fioco); font-size: 12px; padding: var(--s3) var(--s2); }
+
+.coda {
+  color: var(--fioco); font-size: 11.5px; border-top: 1px solid var(--bordo);
+  padding-top: var(--s3); margin-top: var(--s6);
+}
+
+/* ------------------------------------------------------------- dialogo */
+dialog {
+  border: 1px solid var(--line-forte); border-radius: var(--r-panel);
+  background: var(--ink-1); color: var(--testo); padding: var(--s5);
+  max-width: 560px; width: calc(100% - 32px); box-shadow: var(--ombra-alta);
+}
+dialog::backdrop { background: rgba(3, 6, 11, .62); backdrop-filter: blur(2px); }
+dialog h2 { font-family: var(--serif); font-size: 20px; letter-spacing: -.02em;
+  margin-bottom: var(--s2); }
+dialog p { margin: 0 0 var(--s3); color: var(--spento); }
+dialog pre {
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.55;
+  background: var(--ink-0); border: 1px solid var(--bordo); border-radius: 8px;
+  padding: var(--s3); max-height: 240px; overflow: auto; margin: 0 0 var(--s3);
+  white-space: pre-wrap; word-break: break-word; color: var(--spento);
+}
+dialog .conseguenza {
+  border-left: 2px solid var(--ambra-linea); padding-left: var(--s3);
+  color: var(--testo); font-size: 12.5px;
+}
+dialog menu { display: flex; gap: var(--s2); justify-content: flex-end;
+  margin: var(--s4) 0 0; padding: 0; }
+
+/* ----------------------------------------------------------------- nota */
+.nota {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--ink-1); border: 1px solid var(--line-forte);
+  border-radius: var(--r-card); box-shadow: var(--ombra-alta);
+  padding: var(--s3) var(--s4); max-width: min(680px, calc(100% - 32px));
+  font-family: var(--mono); font-size: 11.5px; white-space: pre-wrap;
+  max-height: 40vh; overflow: auto; z-index: 30;
+}
+.nota.male { border-color: var(--rosso-linea); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
