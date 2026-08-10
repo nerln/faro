@@ -210,15 +210,27 @@ def pianificati(procs, loaded, agents):
         if not _mine(a) or not (a.get("calendar") or a.get("interval")):
             continue
         info = loaded.get(a["label"], {})
-        last = probe.mtime(a.get("stdout") or "") or probe.mtime(a.get("stderr") or "")
         quando = _schedule_text(a)
         detail = " ".join(a["program"])[:110]
         status = info.get("status")
-        # The age column means "how long it has been up" everywhere else, and a
-        # job that is not up has no such number. Last run goes in the detail.
-        prefix = f"ultima {_human_age(probe.now() - last)} fa  ·  " if last else ""
-        if status:
-            prefix = f"ultima uscita {status}  ·  " + prefix
+
+        # Never date a scheduled job by the mtime of its log. Two jobs on this
+        # machine write only when they act: `it.nerln.vesuvius-formwatch` has an
+        # empty stderr from five days ago and had in fact run three hours
+        # earlier, and `dev.stiva.ccd-percorsi` fires every minute and had a
+        # log untouched for fourteen hours. Both looked broken and neither was.
+        # launchd counts the runs; that is the number faro is allowed to show.
+        d = probe.launchd_detail(a["label"]) if a["label"] in loaded else {}
+        bits = []
+        if d.get("runs") is not None:
+            bits.append(f"{d['runs']} esecuzioni dal caricamento")
+        exit_code = d.get("last_exit", status)
+        if exit_code:
+            bits.append(f"ULTIMA USCITA {exit_code}")
+        elif exit_code == 0 and d:
+            bits.append("ultima uscita 0")
+        prefix = ("  ·  ".join(bits) + "  ·  ") if bits else ""
+
         out.append(_record(
             "pianificati", a["label"], a["label"],
             stato="in orario" if a["label"] in loaded else "non caricato",
@@ -226,10 +238,15 @@ def pianificati(procs, loaded, agents):
             dove=a["path"],
             dettaglio=prefix + detail,
             azione=f"faro stop {a['label']}",
-            allarme=bool(status),
+            allarme=bool(exit_code),
         ))
-        if last:
-            out[-1]["ultima_esecuzione"] = last
+        out[-1]["esecuzioni"] = d.get("runs")
+        # The log earns a line only when the job ended badly. That is the one
+        # moment when its last line explains something.
+        if exit_code:
+            tail = probe.log_tail(a.get("stderr") or a.get("stdout"), 1)
+            if tail:
+                out[-1]["ultima_riga"] = tail[0][:110]
     return out
 
 

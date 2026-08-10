@@ -158,6 +158,33 @@ class Launchd(unittest.TestCase):
             self.assertIn("noto solo all'app", rows[0]["quando"])
             self.assertIn("fa una cosa", rows[0]["dettaglio"])
 
+    def test_a_scheduled_job_is_never_dated_by_its_log(self):
+        """Misurato il 10/08/2026 su due job, che sembravano rotti e non lo erano.
+
+        vesuvius-formwatch aveva uno stderr vuoto di cinque giorni prima ed era
+        girato tre ore prima. ccd-percorsi scatta ogni minuto e aveva un log
+        fermo da quattordici ore. Un log scritto solo quando il job agisce non
+        dice quando il job e' girato.
+        """
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".log", delete=False) as f:
+            f.write(b"vecchio\n")
+            vecchio = f.name
+        os.utime(vecchio, (0, 0))  # 1970
+        agent = {
+            "label": "it.nerln.prova", "path": "/x.plist",
+            "program": ["/bin/bash", f"{probe.HOME}/.prova/check.sh"],
+            "run_at_load": False, "keep_alive": False, "interval": None,
+            "calendar": [{"Hour": 9, "Minute": 30}],
+            "stdout": None, "stderr": vecchio,
+        }
+        rows = inventory.pianificati({}, {}, [agent])
+        os.unlink(vecchio)
+        self.assertEqual(len(rows), 1)
+        self.assertNotIn("ultima 5", rows[0]["dettaglio"])
+        self.assertNotIn("fa  ", rows[0]["dettaglio"])
+        self.assertIsNone(rows[0]["eta"])
+
     def test_other_peoples_agents_are_not_shown(self):
         agent = {
             "label": "com.google.keystone.agent", "path": "/x.plist",

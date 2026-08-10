@@ -186,6 +186,33 @@ def launchd_loaded():
     return loaded
 
 
+def launchd_detail(label, uid=None):
+    """How many times launchd has run a job, and how it ended.
+
+    `launchctl list` gives the last exit code and nothing else. `launchctl
+    print` also gives `runs`, a counter since the job was loaded. Neither gives
+    a timestamp, which is why faro must never claim to know when a scheduled
+    job last ran: the only thing it can honestly say is how many times.
+
+    One call per user job, five of them on this machine, not one per process.
+    """
+    uid = os.getuid() if uid is None else uid
+    out = _run(["launchctl", "print", f"gui/{uid}/{label}"], timeout=5)
+    if not out:
+        return {}
+    detail = {}
+    m = re.search(r"^\s*runs = (\d+)", out, re.M)
+    if m:
+        detail["runs"] = int(m.group(1))
+    m = re.search(r"^\s*last exit code = (\d+)", out, re.M)
+    if m:
+        detail["last_exit"] = int(m.group(1))
+    m = re.search(r"^\s*state = (\S+)", out, re.M)
+    if m:
+        detail["state"] = m.group(1)
+    return detail
+
+
 def launch_agents():
     """Every user LaunchAgent plist, parsed.
 
