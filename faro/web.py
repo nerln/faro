@@ -256,8 +256,28 @@ class _Manico(http.server.BaseHTTPRequestHandler):
         return host in {o.split("//", 1)[1] for o in self.ammessi}
 
     def _gettone_buono(self):
+        # Due difetti trovati dalla revisione avversariale dell'11/08/2026, e
+        # tutti e due qui dentro.
+        #
+        # Il primo: la classe base ha `gettone = ""`, e con l'intestazione
+        # assente il confronto era vero. Oggi non era sfruttabile perche'
+        # `ammessi = ()` faceva fallire prima il muro dell'Host, ma la difesa
+        # reggeva su un attributo diverso da quello che deve reggerla. Un
+        # gettone vuoto adesso e' un rifiuto, e basta.
+        #
+        # Il secondo: `hmac.compare_digest` solleva TypeError se una delle due
+        # stringhe ha caratteri fuori dall'ASCII, e le intestazioni HTTP
+        # arrivano decodificate in latin-1. Un solo byte sopra 127 faceva
+        # morire il thread senza risposta e con una traccia nel terminale.
+        atteso = self.gettone
+        if not atteso:
+            return False
         dato = self.headers.get(HEADER_GETTONE) or ""
-        return hmac.compare_digest(dato, self.gettone)
+        try:
+            return hmac.compare_digest(dato.encode("utf-8", "surrogateescape"),
+                                       atteso.encode("utf-8"))
+        except Exception:
+            return False
 
     def _permesso(self):
         """403 con un motivo, o None se puo' passare."""
@@ -304,8 +324,12 @@ class _Manico(http.server.BaseHTTPRequestHandler):
         # qualcuno che non doveva: passa per _pulito, se no una pagina ostile
         # scrive quello che vuole nel terminale di Eugenio con una sequenza di
         # escape (CLAUDE.md, invariante 8: e' dato, non istruzione).
+        # `motivo` contiene il repr di un Host o di un Origin, cioe' testo di
+        # chi ha bussato, e passava al formato senza tetto: un Host da 60 KB
+        # riempiva il terminale, e succedeva prima di qualunque autorizzazione.
         self.log_error("respinta una %s su %s: %s",
-                       _pulito(self.command), _pulito(self.path), motivo)
+                       _pulito(self.command), _pulito(self.path),
+                       _pulito(motivo, 120))
         self._json(403, {"errore": "non autorizzato"}, chiudi=True)
 
     # -- rotte
@@ -339,8 +363,14 @@ class _Manico(http.server.BaseHTTPRequestHandler):
             return self._json(400, {"errore": f"corpo illeggibile: {e}"}, chiudi=True)
 
         if percorso == "/api/reap":
-            esito = azione_reap(self.cli, corpo.get("esegui"))
-            if corpo.get("esegui"):
+            # `esegui` decide fra una prova e la chiusura vera dei processi, e
+            # decideva con la verita' di Python su un json non validato: la
+            # stringa "false", la stringa "0" e la lista vuota di un altro
+            # linguaggio chiudevano davvero. L'unica cosa che vale come si' e'
+            # il booleano vero.
+            esegui = corpo.get("esegui") is True
+            esito = azione_reap(self.cli, esegui)
+            if esegui:
                 self.letture.scade()
                 self.log_error("chiusi gli orfani dalla gui")
             return self._json(200, esito)

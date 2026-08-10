@@ -392,6 +392,47 @@ class Gui(unittest.TestCase):
         self.assertEqual(self.cli.chiamate, [("reap", True, 0)])
         self.assertIn("niente da chiudere", json.loads(corpo)["testo"])
 
+    def test_solo_il_booleano_vero_chiude_davvero_i_processi(self):
+        """Trovato dalla revisione avversariale dell'11/08/2026.
+
+        `esegui` decideva fra una prova e la chiusura vera con la verita' di
+        Python su un json non validato. La stringa "false" e la stringa "0"
+        sono esattamente quello che manda chi passa un flag da un altro
+        linguaggio, e chiudevano i processi.
+        """
+        for bugiardo in ("false", "no", "0", ["x"], {"a": 1}, 1, "true"):
+            with self.subTest(bugiardo=bugiardo):
+                self.cli.chiamate.clear()
+                codice, _, _ = _chiama(self.porta, "/api/reap",
+                                       {"esegui": bugiardo}, gettone=self.gettone)
+                self.assertEqual(codice, 200)
+                self.assertEqual(self.cli.chiamate, [("reap", False, 0)])
+
+    def test_un_gettone_non_ascii_non_fa_morire_il_thread(self):
+        """compare_digest solleva TypeError sulle str non ASCII, e le
+        intestazioni HTTP arrivano decodificate in latin-1. Un byte sopra 127
+        lasciava il client senza risposta e stampava una traccia."""
+        codice, _, _ = _chiama(self.porta, "/api/reap", {"esegui": True},
+                               gettone="pippò" + "x" * 38)
+        self.assertEqual(codice, 403)
+        self.assertEqual(self.cli.chiamate, [])
+
+    def test_un_host_lunghissimo_non_riempie_il_terminale(self):
+        codice, _, _ = _chiama(self.porta, "/api/reap", {"esegui": True},
+                               gettone=self.gettone, host="a" * 4000 + ":1")
+        self.assertEqual(codice, 403)
+        self.assertEqual(self.cli.chiamate, [])
+
+    def test_la_difesa_non_regge_su_un_attributo_diverso_da_quello_giusto(self):
+        """La classe base aveva `gettone = ""`, e con l'intestazione assente il
+        confronto era vero: passava solo perche' falliva prima il muro
+        dell'Host. Un gettone vuoto deve essere un rifiuto per conto suo."""
+        class Nudo(web._Manico):
+            gettone = ""
+        finto = Nudo.__new__(Nudo)
+        finto.headers = {}
+        self.assertFalse(web._Manico._gettone_buono(finto))
+
     def test_un_gettone_sbagliato_non_passa(self):
         codice, _, _ = _chiama(self.porta, "/api/ferma", {"pid": 999999},
                                gettone="x" * 43)
