@@ -470,7 +470,41 @@ def _describe(command):
     return command.split()[0].split("/")[-1]
 
 
-def orfani(procs, loaded, cwd_map, ports):
+# Un processo nato da poco non si puo' dichiarare abbandonato: la sessione che
+# lo ha avviato sta quasi certamente per usarlo.
+ETA_MINIMA_ORFANO = 600
+
+# Se il transcript della sessione e' stato scritto da meno di questo, la
+# sessione sta ancora lavorando.
+SESSIONE_VIVA_SE_SCRITTA_DA = 900
+
+
+def _sessione_ancora_viva(cwd, adesso=None):
+    """La sessione che possiede questo scratchpad sta ancora scrivendo?
+
+    Il percorso di uno scratchpad e'
+    `/private/tmp/claude-501/<progetto>/<uuid>/scratchpad`, e lo stesso
+    `<progetto>/<uuid>` nomina il transcript sotto `~/.claude/projects`. Se quel
+    file e' stato toccato da poco, la sessione e' viva e quello che ha avviato
+    e' un servizio, non un residuo.
+
+    Serve perche' `ppid == 1` non prova affatto che la sessione sia morta: una
+    shell che avvia un server esce subito, e il server viene riadottato da
+    launchd mentre la sessione lo sta ancora usando.
+    """
+    m = re.search(r"claude-501/([^/]+)/([0-9a-f-]{36})", cwd or "")
+    if not m:
+        return None  # non si puo' dire
+    progetto, sessione = m.group(1), m.group(2)
+    transcript = os.path.join(CLAUDE, "projects", progetto, sessione + ".jsonl")
+    t = probe.mtime(transcript)
+    if t is None:
+        return None
+    adesso = adesso if adesso is not None else probe.now()
+    return (adesso - t) < SESSIONE_VIVA_SE_SCRITTA_DA
+
+
+def orfani(procs, loaded, cwd_map, ports, cartelle_vive=()):
     """Servers whose session died. Nobody is going to stop these.
 
     The test is deliberately narrow, because this is the only list faro will
@@ -478,11 +512,20 @@ def orfani(procs, loaded, cwd_map, ports):
 
       1. the parent is gone, so the process was reparented to launchd;
       2. launchd does not supervise it, checked against the pids it declares;
-      3. and either it sits in a session scratchpad, or it is one of the
-         handful of servers a session is known to start.
+      3. either it sits in a session scratchpad, or it is one of the handful of
+         servers a session is known to start;
+      4. and the session that owns it is not still writing, and the process is
+         not too young to judge.
 
     A supervised service always fails the second test, which is what keeps
     `faro reap` from ever touching plancia or stiva.
+
+    The fourth test exists because the first one proves less than it looks
+    like. A session that starts a server from a shell command loses the shell
+    immediately, and the server is reparented to launchd while the session is
+    alive and still using it. Whatever fails only the fourth test is not an
+    orphan at all: it comes back as a service, with the reason written next to
+    it.
     """
     supervised = {i.get("pid") for i in loaded.values() if i.get("pid")}
     out = []
@@ -498,6 +541,36 @@ def orfani(procs, loaded, cwd_map, ports):
                 break
         if not (in_scratch or label):
             continue
+
+        # Quarta prova, aggiunta dopo la domanda giusta di Eugenio: orfano non
+        # vuol dire malato. Un processo giovane appartiene a chi lo ha appena
+        # avviato, e una sessione che sta ancora scrivendo il suo transcript
+        # non e' morta. In entrambi i casi e' un servizio, e va detto cosi'.
+        viva = _sessione_ancora_viva(cwd)
+        giovane = (p["age"] or 0) < ETA_MINIMA_ORFANO
+        # Il caso piu' ovvio, e quello che per poco non ha fatto uccidere un
+        # server in uso: se una sessione viva sta lavorando in quella stessa
+        # cartella, quel server e' suo. Vale quando il processo non sta in uno
+        # scratchpad e quindi non porta scritto addosso a chi appartiene.
+        in_uso = any(cwd == c or cwd.startswith(c.rstrip("/") + "/")
+                     for c in cartelle_vive if c and c != "?")
+        if viva or giovane or in_uso:
+            porte = ports.get(p["pid"], [])
+            motivo = ("una sessione viva lavora in questa cartella" if in_uso
+                      else "la sessione sta ancora scrivendo" if viva
+                      else f"avviato da {_human_age(p['age'])}, troppo presto per dirlo")
+            out_servizio = _record(
+                "servizi", f"pid:{p['pid']}", label or "processo di sessione",
+                stato="in servizio",
+                pid=p["pid"], rss=p["rss"], eta=p["age"],
+                dove=cwd or "?",
+                dettaglio=(f"porta {', '.join(str(x) for x in porte)}  ·  " if porte else "")
+                          + motivo,
+                azione=f"faro stop {p['pid']}",
+            )
+            out.append(out_servizio)
+            continue
+
         porte = ports.get(p["pid"], [])
         session = ""
         m = re.search(r"claude-501/[^/]+/([0-9a-f-]{36})", cwd)
@@ -544,7 +617,8 @@ def snapshot():
     rows += rada()
     rows += sessioni(procs, cwd_map, ports, seen)
     rows += sparsi(procs, loaded, ports, seen)
-    rows += orfani(procs, loaded, cwd_map, ports)
+    cartelle_vive = [cwd_map.get(s["pid"], "") for s in _live_sessions(procs)]
+    rows += orfani(procs, loaded, cwd_map, ports, cartelle_vive)
 
     return {
         "ts": probe.now(),

@@ -68,17 +68,27 @@ faro json                 # tutto, per un altro programma
 
 ## Cosa può chiudere `faro reap`
 
-Solo processi che passano tutte e tre queste prove:
+Solo processi che passano tutte e quattro queste prove:
 
 1. il genitore è morto, quindi il processo è stato riadottato da launchd (`ppid == 1`);
 2. launchd non lo supervisiona, verificato contro i pid che launchd stesso dichiara;
-3. e o sta nella cartella di lavoro temporanea di una sessione, o è uno dei pochi
+3. o sta nella cartella di lavoro temporanea di una sessione, o è uno dei pochi
    server che una sessione notoriamente avvia (`http.server`, `vite`, `npm run dev`,
-   il server MCP di plancia, il ponte agentbridge, l'app-server di codex).
+   il server MCP di plancia, il ponte agentbridge, l'app-server di codex);
+4. e nessuno lo sta usando: ha più di dieci minuti, la sessione del suo scratchpad ha
+   smesso di scrivere, e nessuna sessione viva lavora in quella cartella.
 
 La seconda prova è quella che impedisce a `reap` di toccare `plancia` o `stiva`: un
 servizio supervisionato la fallisce sempre. Ogni prova ha un test che la toglie e
 verifica che il processo smetta di essere un candidato (`tools/prova.py`).
+
+La quarta esiste perché **orfano non vuol dire malato**, e perché la prima prova meno di
+quanto sembri: `ppid == 1` dice che è morta la shell, non la sessione. Una sessione che
+avvia un server da un comando Bash perde subito la shell, e il server viene riadottato da
+launchd mentre lei è viva e lo sta usando. Senza la quarta prova, `faro` il 10/08/2026
+avrebbe proposto di chiudere un server sulla porta 8777 che tre sessioni aperte da mezz'ora
+stavano usando. Quello che fallisce solo la quarta prova non compare fra gli orfani: torna
+fra i servizi, con scritto accanto perché.
 
 La lista viene ricalcolata nel momento in cui `reap --esegui` parte, e mai presa da una
 schermata di prima: un pid stampato dieci minuti fa può essere stato riusato da un altro

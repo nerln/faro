@@ -28,12 +28,20 @@ Se una modifica ne rompe una, la modifica è sbagliata, non l'invariante.
    niente di come si comporta la macchina. Niente database, niente storico, niente
    watchdog.
 
-3. **Le tre prove di `orfani()` non si allargano.** `ppid == 1`, non supervisionato da
-   launchd, e o dentro uno scratchpad di sessione o in `SESSION_SPAWNED`. La seconda è
-   quella che protegge plancia e stiva. Ogni prova ha un test che la toglie e verifica
-   che il processo smetta di essere un candidato. Aggiungere un pattern a
-   `SESSION_SPAWNED` significa aggiungere un modo di uccidere un processo: fallo solo per
-   cose che una sessione avvia davvero.
+3. **Le quattro prove di `orfani()` non si allargano.** `ppid == 1`; non supervisionato
+   da launchd; o dentro uno scratchpad di sessione o in `SESSION_SPAWNED`; e nessuno lo
+   sta usando. La seconda è quella che protegge plancia e stiva. Ogni prova ha un test
+   che la toglie e verifica che il processo smetta di essere un candidato. Aggiungere un
+   pattern a `SESSION_SPAWNED` significa aggiungere un modo di uccidere un processo:
+   fallo solo per cose che una sessione avvia davvero.
+
+3bis. **La quarta prova esiste perché la prima prova meno di quanto sembri.** `ppid == 1`
+   dice che è morta la shell, non la sessione: una sessione che avvia un server da un
+   comando Bash perde subito la shell, e il server viene riadottato da launchd mentre la
+   sessione è viva e lo sta usando. Quindi un processo è di qualcuno se ha meno di
+   `ETA_MINIMA_ORFANO` secondi, o se la sessione del suo scratchpad sta ancora scrivendo
+   il transcript, o se una sessione viva lavora in quella cartella. Quello che fallisce
+   solo la quarta prova non è un orfano: torna fra i servizi con scritto accanto perché.
 
 4. **`reap --esegui` ricalcola la lista.** Non accetta pid da fuori, non riusa la
    schermata di prima. Un pid vecchio di dieci minuti può essere stato riassegnato.

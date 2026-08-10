@@ -40,6 +40,67 @@ class Orfani(unittest.TestCase):
         self.assertEqual(rows[0]["porte"], [8742])
         self.assertEqual(rows[0]["sessione"], "1111aaaa-2222-3333-4444-555566667777")
 
+    def test_a_young_process_is_a_service_and_not_an_orphan(self):
+        """La domanda di Eugenio: orfano vuol dire per forza male? No.
+
+        Una sessione che avvia un server da un comando shell perde subito la
+        shell, e il server viene riadottato da launchd mentre la sessione e'
+        viva e lo sta usando. `ppid == 1` non prova che la sessione sia morta.
+        """
+        procs, loaded, cwds, ports = self.base()
+        procs[900]["age"] = 13
+        rows = inventory.orfani(procs, loaded, cwds, ports)
+        self.assertEqual([r["strato"] for r in rows], ["servizi"])
+        self.assertIn("troppo presto", rows[0]["dettaglio"])
+
+    def test_a_session_still_writing_keeps_its_server(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            uuid = "1111aaaa-2222-3333-4444-555566667777"
+            proj = "-Users-prova"
+            os.makedirs(os.path.join(d, "projects", proj))
+            open(os.path.join(d, "projects", proj, uuid + ".jsonl"), "w").close()
+            vecchio_claude = inventory.CLAUDE
+            inventory.CLAUDE = d
+            try:
+                procs, loaded, cwds, ports = self.base()
+                cwds[900] = f"{probe.SCRATCH_ROOT}/{proj}/{uuid}/scratchpad"
+                rows = inventory.orfani(procs, loaded, cwds, ports)
+                self.assertEqual([r["strato"] for r in rows], ["servizi"])
+                self.assertIn("ancora scrivendo", rows[0]["dettaglio"])
+            finally:
+                inventory.CLAUDE = vecchio_claude
+
+    def test_a_live_session_in_the_same_folder_keeps_its_server(self):
+        """Il caso che per poco non ha fatto uccidere un server in uso.
+
+        Il server sulla porta 8777 aveva come cartella la radice del Drive, e
+        li' dentro c'erano tre sessioni vive aperte da mezz'ora. Fuori da uno
+        scratchpad un processo non porta scritto a chi appartiene: lo dice la
+        cartella.
+        """
+        procs, loaded, cwds, ports = self.base()
+        drive = "/Users/e/Library/CloudStorage/GoogleDrive-x/Il mio Drive"
+        cwds[900] = drive
+        rows = inventory.orfani(procs, loaded, cwds, ports, cartelle_vive=[drive])
+        self.assertEqual([r["strato"] for r in rows], ["servizi"])
+        self.assertIn("sessione viva lavora", rows[0]["dettaglio"])
+
+    def test_a_folder_below_a_live_session_counts_too(self):
+        procs, loaded, cwds, ports = self.base()
+        cwds[900] = "/Users/e/dev/sito/docs"
+        rows = inventory.orfani(procs, loaded, cwds, ports,
+                                cartelle_vive=["/Users/e/dev/sito"])
+        self.assertEqual([r["strato"] for r in rows], ["servizi"])
+
+    def test_a_similar_name_is_not_the_same_folder(self):
+        """`/dev/sito-vecchio` non sta dentro `/dev/sito`."""
+        procs, loaded, cwds, ports = self.base()
+        cwds[900] = "/Users/e/dev/sito-vecchio"
+        rows = inventory.orfani(procs, loaded, cwds, ports,
+                                cartelle_vive=["/Users/e/dev/sito"])
+        self.assertEqual([r["strato"] for r in rows], ["orfani"])
+
     def test_a_living_parent_saves_it(self):
         procs, loaded, cwds, ports = self.base()
         procs[900]["ppid"] = 500
