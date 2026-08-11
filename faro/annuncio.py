@@ -180,7 +180,7 @@ def notifica(sottotitolo, corpo, titolo="faro", prova=False):
     return cmd
 
 
-def scrivi_su_boa(testo, prova=False):
+def scrivi_su_boa(testo, prova=False, chiave=None):
     """Una voce di tipo avviso sulla lavagna, se boa e' installato.
 
     Restituisce True se e' stata scritta. Se boa non c'e', non e' un errore e
@@ -190,11 +190,19 @@ def scrivi_su_boa(testo, prova=False):
     if not (os.path.exists(BOA) and os.access(BOA, os.X_OK)):
         return False
     cmd = [BOA, "scrivi", "--tipo", "avviso", _pulisci(testo)]
+    if chiave:
+        cmd += ["--una-volta", "--chiave", chiave]
     if prova:
         return cmd
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-        return p.returncode == 0
+        if p.returncode != 0:
+            return False
+        # Con una chiave, boa risponde a vuoto quando la voce c'era gia'. E'
+        # cosi' che faro sa di essersi ripetuto senza tenersi uno stato suo:
+        # l'invariante 2 dice che l'unico file che faro scrive e' la cache
+        # degli orari, e questa memoria appartiene alla lavagna.
+        return bool(p.stdout.strip()) if chiave else True
     except Exception:
         return False
 
@@ -216,18 +224,36 @@ def main(args):
 
     sottotitolo, corpo = riassunto(urgenti)
 
+    # La chiave e' fatta dai tipi di notizia, non dai numeri. "swap alto piu'
+    # orfani" resta la stessa notizia mentre i GB e i pageout cambiano a ogni
+    # lettura, ed e' quello che serve perche' non venga ridetta ogni volta.
+    chiave = "+".join(sorted({n["chiave"] for n in urgenti}))
+
     if prova:
-        su_boa = scrivi_su_boa(f"{sottotitolo}. {corpo}", prova=True)
-        lavagna = "si" if su_boa else "no, boa non risulta installato"
+        cmd = scrivi_su_boa(f"{sottotitolo}. {corpo}", prova=True, chiave=chiave)
         print("direi:")
         print("  titolo      faro")
         print(f"  sottotitolo {sottotitolo}")
         print(f"  corpo       {corpo}")
-        print(f"  su boa      {lavagna}")
+        print(f"  chiave      {chiave}")
+        print(f"  su boa      {'si' if cmd else 'no, boa non risulta installato'}")
         return 0
 
-    notifica(sottotitolo, corpo)
+    # Prima la lavagna, poi la notifica. L'ordine non e' casuale: e' boa che
+    # sa se questa notizia e' gia' stata data, e se lo e' stata tace anche la
+    # notifica. Senza, la notte dell'11/08/2026 lo SessionStart ha prodotto
+    # dodici avvisi quasi identici in un'ora, consegnati poi a ogni sessione a
+    # ogni prompt.
+    nuova = True
     if not getattr(args, "senza_boa", False):
-        scrivi_su_boa(f"{sottotitolo}. {corpo}")
+        nuova = scrivi_su_boa(f"{sottotitolo}. {corpo}", chiave=chiave)
+        if nuova is False and _boa_c_e():
+            return 0
+
+    notifica(sottotitolo, corpo)
     print(f"{sottotitolo}. {corpo}")
     return 0
+
+
+def _boa_c_e():
+    return os.path.exists(BOA) and os.access(BOA, os.X_OK)
