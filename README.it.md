@@ -83,6 +83,8 @@ faro stop <etichetta>     # ferma un job launchd
 faro stop <pid>           # ferma un processo
 faro gui                  # la stessa plancia nel browser, in primo piano
 faro annuncia             # se c'è qualcosa da sapere lo dice, se no tace
+faro spazio 5G            # cosa chiudere perché un lavoro da 5G entri, e se si può
+faro token                # dove sono andati i token oggi, e chi li ha spesi
 faro json                 # tutto, per un altro programma
 ```
 

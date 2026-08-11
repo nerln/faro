@@ -82,8 +82,56 @@ faro stop <label>         # stop a launchd job
 faro stop <pid>           # stop a process
 faro gui                  # the same board in the browser, in the foreground
 faro annuncia             # says something only if there is something to say
+faro spazio 5G            # what to close so a 5G job fits, and whether it can
+faro token                # where the tokens went today, and who spent them
 faro json                 # everything, for another program
 ```
+
+## What to close so a job fits
+
+`rada` queues a heavy job until there is room. What neither tool could say was the
+thing you actually need at that moment: **which windows to close so it fits, and
+whether an answer exists at all.**
+
+```
+$ faro spazio 5G
+serve 5.0GB   rada adesso ne concede 3.5GB   memoria usata 10.1GB di 16.0GB
+   swap gia' in uso: 4.3GB
+
+  chiudendo, in quest'ordine:
+        1.4GB  sessioni di Claude Code      (12 processi)
+               perdi: niente: i transcript restano e si riprendono con claude --resume
+      492.3MB  Chrome
+               perdi: le schede, che Chrome riapre da solo al riavvio
+```
+
+Candidates come ranked by what closing them costs you, not by size: sessions whose
+transcripts survive come before a browser that reopens its tabs, and that comes before
+an editor that may hold unsaved work. The system itself is never a candidate.
+
+The estimate is stated as an estimate. Closing an application holding 1 GB of RSS does
+not hand rada back 1 GB: shared pages are counted more than once and compressed pages
+weigh less than they measure. When closing everything closable still is not enough,
+`faro spazio` says so, rather than suggesting you force it.
+
+## Where the tokens went
+
+```
+$ faro token
+token da mezzanotte   43 transcript toccati
+
+  in uscita 3.5M   cache letta 1086.8M   cache scritta 31.2M
+  quello che conta e' l'uscita: la cache letta costa una frazione.
+
+  sessioni: 3.4M   subagenti: 63k
+```
+
+Three things make this less trivial than it looks. The same `usage` block appears more
+than once per message in a transcript, so summing rows doubles the bill: entries are
+deduplicated on the message id. The number that matters is output, not the total, since
+cache reads dominate by an order of magnitude and cost a fraction. And the transcript
+directory holds 1.3 GB, so only files touched inside the window are opened, with a
+substring check before any JSON parsing. It answers in about a third of a second.
 
 ## What it does not do
 
