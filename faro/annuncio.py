@@ -191,7 +191,11 @@ def scrivi_su_boa(testo, prova=False, chiave=None):
         return False
     cmd = [BOA, "scrivi", "--tipo", "avviso", _pulisci(testo)]
     if chiave:
-        cmd += ["--una-volta", "--chiave", chiave]
+        # Ambito macchina: "la macchina e' in swap" e' vero della macchina, non
+        # di chi lo dice. Con l'ambito di sessione, la mattina dell'11/08/2026
+        # sei sessioni diverse avevano scritto sei volte la stessa riga, e per
+        # la lavagna erano sei autori distinti quindi sei notizie distinte.
+        cmd += ["--una-volta", "--chiave", chiave, "--ambito", "macchina"]
     if prova:
         return cmd
     try:
