@@ -126,7 +126,13 @@ def _riga_umana(r):
     d["eta_umana"] = inventory._human_age(r["eta"]) if r["eta"] else ""
     # Solo un pid si puo' fermare da qui. Le etichette launchd restano
     # nell'azione scritta, da copiare nel terminale.
-    d["fermabile"] = bool(r.get("pid"))
+    #
+    # E non basta avere un pid: i servizi dello strato `permanenti` sono tenuti
+    # in vita da launchd, e `cmd_stop` rifiuta i loro pid perche' ucciderli non
+    # li ferma, li fa ripartire. Disegnare il bottone lo stesso significa
+    # mettere sulla pagina un comando che non funziona mai proprio sui servizi
+    # che contano, e insegnare che i bottoni a volte non fanno niente.
+    d["fermabile"] = bool(r.get("pid")) and r.get("strato") != "permanenti"
     return d
 
 
