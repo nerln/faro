@@ -153,13 +153,19 @@ def render(snap, only=None, larghezza=None, dettagli=False):
     # 16 GB. The freeze that made rada exist happened at 2992 MB of swap, so a
     # number in that neighbourhood is not a statistic, it is the warning.
     #
-    # But `swap_used` is memory already *allocated*, and macOS does not hand the
-    # swapfiles back when the pressure drops: it keeps them until it decides
-    # otherwise, or until a reboot. Measured on 11/08/2026: four sessions
-    # closed, memory used down by 1 GB, pageouts stopped dead, and swap stayed
-    # at 5.34 GB for as long as anyone watched. A board that shouts "in swap"
-    # off that number alone goes on shouting for hours after the trouble is
-    # over, and then nobody reads it.
+    # But `swap_used` is memory already *allocated*, and it does not follow the
+    # memory down step for step. Measured twice on 11/08/2026, and the second
+    # measurement corrected the first:
+    #
+    #   closing four idle sessions freed 1 GB of memory and moved swap by 20 MB;
+    #   quitting Chrome twenty minutes later freed 1.2 GB and macOS deleted a
+    #   whole swapfile, 7.2 GB of swap down to 6.0, used from 5.47 to 4.90.
+    #
+    # So the kernel does hand swapfiles back, but only when enough real pressure
+    # goes away at once, not when a number drops a little. In between, swap sits
+    # high with nothing wrong. A board that shouts "in swap" off that number
+    # alone goes on shouting for hours after the trouble is over, and then
+    # nobody reads it.
     #
     # So the alarm needs both: a lot of swap **and** a kernel that says it is
     # struggling now. With swap high and the pressure normal, the sentence to
@@ -176,8 +182,8 @@ def render(snap, only=None, larghezza=None, dettagli=False):
     elif molto:
         lines.append("       " + ink.yellow(
             f"{_human_bytes(mem['swap_used'])} of swap is still allocated, but the "
-            f"pressure is normal: the machine has stopped paging. macOS gives the "
-            f"swapfiles back when it decides to, not when the memory frees."))
+            f"pressure is normal: the machine has stopped paging. the kernel frees "
+            f"a swapfile when a big consumer quits, not gradually."))
     elif mem["swap_used"] > 512 * 1024 ** 2:
         lines.append("       " + ink.yellow(
             f"swap in use: {_human_bytes(mem['swap_used'])}. keep an eye on it."))
