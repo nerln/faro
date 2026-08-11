@@ -90,20 +90,26 @@ def valuta(snap):
             f"the oldest for {_human_age(vecchio)}. "
             f"`faro reap` shows what would be closed."))
 
+    # Lo swap allocato non basta per svegliare qualcuno: macOS non restituisce i
+    # file di swap quando la pressione cala, quindi quel numero resta alto per
+    # ore dopo che il problema e' finito. Una notifica che arriva allora e' la
+    # notifica che insegna a ignorare le notifiche. Serve anche che il kernel
+    # dica che sta faticando.
     swap = mem.get("swap_used", 0)
-    if swap > SWAP_ALLARME:
+    pressione = mem.get("pressione", 1)
+    if swap > SWAP_ALLARME and pressione != 1:
         vive = sum(1 for r in righe if r["strato"] == "sessioni")
         notizie.append(_notizia(
             "swap", "high",
-            f"the machine is in swap: {_human_bytes(swap)}",
-            f"{mem.get('pageouts', 0)} pageouts, {vive} live "
+            f"the machine is struggling: {_human_bytes(swap)} of swap",
+            f"the kernel says pressure is not normal, {vive} live "
             f"{_plurale(vive, 'session', 'sessions')}. "
             f"close one before starting anything else."))
     elif swap > SWAP_ATTENZIONE:
         notizie.append(_notizia(
             "swap", "medium",
             f"swap in use: {_human_bytes(swap)}",
-            "still small, but this is usually where it starts climbing."))
+            "pressure is normal, so this is a note and not an alarm."))
 
     for r in righe:
         if r["strato"] != "pianificati" or not r.get("allarme"):

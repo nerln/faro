@@ -66,6 +66,24 @@ def memory():
     pageouts = int(counts.get("Pageouts", 0))
     compressed = int(counts.get("Pages occupied by compressor", 0)) * pagesize
 
+    # Il livello di pressione e il livello di jetsam sono le due cose che dicono
+    # se la macchina sta soffrendo **adesso**, e si leggono senza tenere stato.
+    # Servono perche' `swap_used` e' memoria *allocata*: macOS non restituisce i
+    # file di swap quando la pressione cala, li tiene finche' decide lui o
+    # finche' non si riavvia. Misurato l'11/08/2026: chiuse quattro sessioni, la
+    # memoria usata e' scesa di 1 GB, i pageout si sono fermati, e lo swap e'
+    # rimasto a 5,34 GB. Una plancia che grida "in swap" leggendo solo quel
+    # numero grida per ore dopo che il problema e' finito, e allora non la si
+    # guarda piu'.
+    try:
+        livello = int(_sysctl("kern.memorystatus_vm_pressure_level") or 1)
+    except ValueError:
+        livello = 1
+    try:
+        libero_pct = int(_sysctl("kern.memorystatus_level") or 100)
+    except ValueError:
+        libero_pct = 100
+
     return {
         "total": total,
         "free": free,
@@ -74,6 +92,10 @@ def memory():
         "swap_total": swap_total,
         "swap_used": swap_used,
         "pageouts": pageouts,
+        # 1 normale, 2 avviso, 4 critico: gli stessi valori delle bandiere di
+        # memorypressure di dispatch.
+        "pressione": livello,
+        "libero_pct": libero_pct,
     }
 
 

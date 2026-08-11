@@ -73,8 +73,11 @@ def _memory_line(mem, ink):
         swap_txt = ink.red(swap_txt)
     elif swap > 0:
         swap_txt = ink.yellow(swap_txt)
+    pres = {1: "normal", 2: "warning", 4: "critical"}.get(mem.get("pressione", 1), "?")
+    if mem.get("pressione", 1) != 1:
+        pres = ink.red(pres)
     return (f"memory {used} of {total}   compressed {_human_bytes(mem['compressed'])}"
-            f"   swap {swap_txt}   pageouts {mem['pageouts']}")
+            f"   swap {swap_txt}   pressure {pres}")
 
 
 def _collapse(group):
@@ -149,13 +152,32 @@ def render(snap, only=None, larghezza=None, dettagli=False):
 
     # 16 GB. The freeze that made rada exist happened at 2992 MB of swap, so a
     # number in that neighbourhood is not a statistic, it is the warning.
+    #
+    # But `swap_used` is memory already *allocated*, and macOS does not hand the
+    # swapfiles back when the pressure drops: it keeps them until it decides
+    # otherwise, or until a reboot. Measured on 11/08/2026: four sessions
+    # closed, memory used down by 1 GB, pageouts stopped dead, and swap stayed
+    # at 5.34 GB for as long as anyone watched. A board that shouts "in swap"
+    # off that number alone goes on shouting for hours after the trouble is
+    # over, and then nobody reads it.
+    #
+    # So the alarm needs both: a lot of swap **and** a kernel that says it is
+    # struggling now. With swap high and the pressure normal, the sentence to
+    # say is a different one, and it is not an alarm.
     mem = snap["memoria"]
-    if mem["swap_used"] > 2 * 1024 ** 3:
+    pressione = mem.get("pressione", 1)
+    molto = mem["swap_used"] > 2 * 1024 ** 3
+    if molto and pressione != 1:
         vive = counts.get("sessioni", 0)
         lines.append("       " + ink.red(
-            f"the machine is in swap: {_human_bytes(mem['swap_used'])}, "
-            f"{mem['pageouts']} pageouts, {vive} live sessions. "
+            f"the machine is struggling: {_human_bytes(mem['swap_used'])} of swap "
+            f"and the kernel says pressure is not normal, {vive} live sessions. "
             f"close one before starting anything else."))
+    elif molto:
+        lines.append("       " + ink.yellow(
+            f"{_human_bytes(mem['swap_used'])} of swap is still allocated, but the "
+            f"pressure is normal: the machine has stopped paging. macOS gives the "
+            f"swapfiles back when it decides to, not when the memory frees."))
     elif mem["swap_used"] > 512 * 1024 ** 2:
         lines.append("       " + ink.yellow(
             f"swap in use: {_human_bytes(mem['swap_used'])}. keep an eye on it."))

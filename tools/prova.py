@@ -875,5 +875,50 @@ class NomiDegliStrati(unittest.TestCase):
             nome = board.TITLES[k].partition("  ")[0]
             self.assertEqual(board.strato_da_nome(nome), k)
 
+
+class SwapEPressione(unittest.TestCase):
+    """Lo swap allocato non e' lo swap che fa male.
+
+    Misurato l'11/08/2026: chiuse quattro sessioni, la memoria usata scesa di
+    1 GB, i pageout fermi a zero per un minuto intero, e lo swap rimasto a
+    5,34 GB. macOS non restituisce i file di swap quando la pressione cala.
+    Una plancia che grida leggendo solo quel numero grida per ore dopo che il
+    problema e' finito, e allora non la si guarda piu'.
+    """
+
+    def _snap(self, swap_gb, pressione):
+        g = 1024 ** 3
+        return {"ts": 0, "righe": [], "memoria": {
+            "total": 16 * g, "free": 8 * g, "used": 8 * g, "compressed": 0,
+            "swap_total": 7 * g, "swap_used": int(swap_gb * g), "pageouts": 300000,
+            "pressione": pressione, "libero_pct": 70}}
+
+    def test_molto_swap_con_pressione_normale_non_e_un_allarme(self):
+        out = board.render(self._snap(5.3, 1), larghezza=100)
+        self.assertIn("still allocated", out)
+        self.assertNotIn("struggling", out)
+
+    def test_molto_swap_con_pressione_alta_lo_e(self):
+        out = board.render(self._snap(5.3, 2), larghezza=100)
+        self.assertIn("struggling", out)
+
+    def test_la_pressione_compare_sempre_nella_riga_della_memoria(self):
+        self.assertIn("pressure normal", board.render(self._snap(0.1, 1), larghezza=100))
+        self.assertIn("pressure critical", board.render(self._snap(0.1, 4), larghezza=100))
+
+    def test_annuncia_non_notifica_per_swap_se_la_pressione_e_normale(self):
+        from faro import annuncio
+        self.assertEqual(annuncio.forti(annuncio.valuta(self._snap(5.3, 1))), [])
+        forti = annuncio.forti(annuncio.valuta(self._snap(5.3, 4)))
+        self.assertEqual(len(forti), 1)
+        self.assertIn("struggling", forti[0]["titolo"])
+
+    def test_senza_il_campo_pressione_si_comporta_come_prima_del_dubbio(self):
+        """Un vecchio json senza il campo non deve far esplodere niente."""
+        snap = self._snap(5.3, 1)
+        del snap["memoria"]["pressione"]
+        out = board.render(snap, larghezza=100)
+        self.assertIn("still allocated", out)
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
