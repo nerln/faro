@@ -1,0 +1,419 @@
+"""faro: what is running on your behalf, right now.
+
+  faro                 the board: six layers on one screen
+  faro watch           the same, refreshed
+  faro orphans         only the processes nobody will ever stop
+  faro reap            what would be closed (closes nothing)
+  faro reap --execute  closes them
+  faro stop <what>     stop a launchd service or a pid
+  faro space 5G        what to close so a 5G job fits
+  faro tokens          where the tokens went, and who spent them
+  faro night           going to bed: cleans up, unblocks the queue, opens nothing
+  faro morning         what happened while you slept
+  faro gui             the same board in the browser, in the foreground
+  faro announce        says something only if there is something to say
+  faro schedules       refresh the cached schedules of the Claude Code tasks
+  faro json            everything, for another program
+
+The Italian names still work as aliases: stato, vivo, orfani, spazio, token,
+notte, mattina, annuncia, pianifica.
+"""
+
+import argparse
+from argparse import Namespace
+import json
+import os
+import re
+import signal
+import sys
+import time
+
+from faro import __version__, board, conto, inventory, notte, probe, spazio
+
+UID = os.getuid()
+
+
+def _snapshot():
+    return inventory.snapshot()
+
+
+# ------------------------------------------------------------------- letture
+
+def cmd_stato(args):
+    snap = _snapshot()
+    only = args.solo.split(",") if args.solo else None
+    print(board.render(snap, only=only, dettagli=args.dettagli))
+    return 0
+
+
+def cmd_vivo(args):
+    try:
+        while True:
+            snap = _snapshot()
+            sys.stdout.write("\033[H\033[2J")
+            print(board.render(snap, dettagli=args.dettagli))
+            print(f"\nrefreshed every {args.ogni}s, ctrl-c to leave")
+            time.sleep(args.ogni)
+    except KeyboardInterrupt:
+        return 0
+
+
+def cmd_orfani(args):
+    snap = _snapshot()
+    orf = [r for r in snap["righe"] if r["strato"] == "orfani"]
+    if not orf:
+        print("no orphans.")
+        return 0
+    print(board.render(snap, only=["orfani"]))
+    tot = sum(r["rss"] for r in orf)
+    print(f"  {len(orf)} processes, {inventory._human_bytes(tot)} of memory.")
+    print("  `faro reap` shows what would happen, `faro reap --execute` closes them.")
+    return 0
+
+
+def cmd_spazio(args):
+    """Cosa chiudere perche' un lavoro entri. Non chiude niente."""
+    testo = args.quanto.strip().upper().replace(",", ".")
+    m = re.match(r"^([\d.]+)\s*([KMGT]?)B?$", testo)
+    if not m:
+        print("I do not understand how much. examples: 5G, 512M, 2.5G")
+        return 1
+    mult = {"": 1, "K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4}
+    serve = int(float(m.group(1)) * mult[m.group(2)])
+    print(spazio.racconta(serve))
+    return 0
+
+
+def cmd_token(args):
+    """Dove sono andati i token. Legge soltanto."""
+    print(conto.racconta(ore=args.ore, giorni=args.giorni))
+    return 0
+
+
+def cmd_notte(args):
+    """Vado a letto. Toglie, sblocca, scrive. Non apre mai niente."""
+    p = notte.piano()
+    print(notte.racconta(p))
+    if not args.esegui:
+        print("\n  dry run. add --execute to actually do it.")
+        return 0
+
+    print()
+    chiusi = 0
+    if p["orfani"]:
+        rc_args = Namespace(esegui=True, piu_vecchi_di=0)
+        cmd_reap(rc_args)
+        chiusi = len(p["orfani"])
+
+    chiuse = 0
+    mie = notte._catena_mia(probe.processes())
+    for s_ in p["ferme"]:
+        if s_["pid"] in mie:
+            continue
+        try:
+            os.kill(s_["pid"], signal.SIGTERM)
+            chiuse += 1
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            print(f"  pid {s_['pid']}: permission denied")
+    if chiuse:
+        print(f"  closed {chiuse} idle sessions.")
+
+    time.sleep(3)
+    dopo = notte.piano()
+    path = notte.rapporto(dopo, chiusi, chiuse)
+    print(f"\n  rada now allows {inventory._human_bytes(dopo['bilancio_ora'])}.")
+    print(f"  report in {path}")
+    print("  when you wake up: faro morning")
+    return 0
+
+
+def cmd_mattina(args):
+    """Cosa e' successo mentre dormivi."""
+    path = notte.ultimo_rapporto()
+    if not path:
+        print("no report: `faro night --execute` writes one.")
+        return 0
+    with open(path) as f:
+        print(f.read())
+    snap = inventory.snapshot()
+    print(board.render(snap, only=["rada", "orfani"]))
+    return 0
+
+
+def cmd_json(args):
+    print(json.dumps(_snapshot(), indent=1, ensure_ascii=False))
+    return 0
+
+
+# ------------------------------------------------------------------ scritture
+
+def _my_ancestors():
+    """Pids of this process and of everything above it.
+
+    faro must never be able to kill the session it was typed into.
+    """
+    procs = probe.processes()
+    chain = set()
+    pid = os.getpid()
+    for _ in range(40):
+        chain.add(pid)
+        p = procs.get(pid)
+        if not p or p["ppid"] in (0, 1):
+            break
+        pid = p["ppid"]
+    chain.add(pid)
+    return chain
+
+
+def cmd_reap(args):
+    """Close the orphans.
+
+    The list is recomputed here and never taken from a previous reading. A
+    board printed ten minutes ago can name a pid that has since been reused by
+    something else, and a stale pid is exactly how a cleanup tool kills the
+    wrong process.
+    """
+    snap = _snapshot()
+    orf = [r for r in snap["righe"] if r["strato"] == "orfani"]
+    if args.piu_vecchi_di:
+        orf = [r for r in orf if (r["eta"] or 0) >= args.piu_vecchi_di]
+    if not orf:
+        print("nothing to close.")
+        return 0
+
+    mine = _my_ancestors()
+    orf = [r for r in orf if r["pid"] not in mine]
+
+    tot = sum(r["rss"] for r in orf)
+    for r in orf:
+        porte = ", ".join(str(p) for p in r.get("porte", [])) or "none"
+        print(f"  pid {r['pid']:<7} {inventory._human_bytes(r['rss']):>8}  "
+              f"for {inventory._human_age(r['eta'])}  ports {porte}")
+        print(f"          {r['nome']}  in {r['dove']}")
+    print(f"\n  {len(orf)} processes, {inventory._human_bytes(tot)}.")
+
+    if not args.esegui:
+        print("  dry run. add --execute to actually close them.")
+        return 0
+
+    chiusi = []
+    for r in orf:
+        try:
+            os.kill(r["pid"], signal.SIGTERM)
+            chiusi.append(r)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            print(f"  pid {r['pid']}: permission denied, left alone")
+    time.sleep(2)
+    for r in chiusi:
+        try:
+            os.kill(r["pid"], 0)
+        except ProcessLookupError:
+            continue
+        try:
+            os.kill(r["pid"], signal.SIGKILL)
+            print(f"  pid {r['pid']}: did not exit on SIGTERM, closed by force")
+        except Exception:
+            pass
+    print(f"  closed {len(chiusi)} processes, reclaimed "
+          f"{inventory._human_bytes(sum(r['rss'] for r in chiusi))}.")
+    return 0
+
+
+def cmd_stop(args):
+    """Stop one thing by the handle the board prints."""
+    target = args.cosa
+    loaded = probe.launchd_loaded()
+
+    if target in loaded or any(a["label"] == target for a in probe.launch_agents()):
+        rc = os.system(f"launchctl bootout gui/{UID}/{target} 2>/dev/null")
+        if args.per_sempre:
+            os.system(f"launchctl disable gui/{UID}/{target}")
+            print(f"{target}: stopped and disabled. "
+                  f"`launchctl enable gui/{UID}/{target}` to get it back.")
+        else:
+            print(f"{target}: stopped. launchd will load it again at next login "
+                  f"(`faro stop {target} --for-good` to prevent that).")
+        return 0 if rc == 0 else 0
+
+    pid_txt = target.split(":")[-1]
+    if not pid_txt.isdigit():
+        print(f"I do not recognise `{target}`. use a launchd label or a pid, "
+              f"as they appear on the board.")
+        return 1
+    pid = int(pid_txt)
+
+    if pid in _my_ancestors():
+        print(f"pid {pid} is the session you are typing in. I will not touch it.")
+        return 1
+    supervised = {i.get("pid") for i in loaded.values() if i.get("pid")}
+    if pid in supervised:
+        print(f"pid {pid} is kept alive by launchd: killing it restarts it. "
+              f"stop it by label.")
+        return 1
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        print(f"pid {pid} does not exist any more.")
+        return 0
+    except PermissionError:
+        print(f"pid {pid}: permission denied.")
+        return 1
+    time.sleep(1.5)
+    try:
+        os.kill(pid, 0)
+        print(f"pid {pid}: asked to exit, still shutting down.")
+    except ProcessLookupError:
+        print(f"pid {pid}: closed.")
+    return 0
+
+
+def cmd_pianifica(args):
+    """Cache the schedules the app owns and does not write to disk.
+
+    Claude Code keeps the cron line of a scheduled task inside the application
+    and only the prompt on disk, so faro cannot read it. A session that has the
+    scheduled-tasks tool can hand it over once, and the board shows it until it
+    changes.
+    """
+    if args.importa:
+        raw = open(args.importa).read() if args.importa != "-" else sys.stdin.read()
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            print(f"invalid json: {e}")
+            return 1
+        if not isinstance(data, list):
+            print("I expect the list that list_scheduled_tasks returns.")
+            return 1
+        os.makedirs(inventory.FARO_HOME, exist_ok=True)
+        with open(inventory.SCHEDULED_CACHE, "w") as f:
+            json.dump(data, f, indent=1)
+        print(f"schedules refreshed for {len(data)} scheduled tasks.")
+        return 0
+
+    snap = _snapshot()
+    print(board.render(snap, only=["pianificati"]))
+    if not os.path.exists(inventory.SCHEDULED_CACHE):
+        print("  the schedules of the Claude Code tasks are not on disk. a session "
+              "can hand them over with:\n    faro schedules --import -   < list.json")
+    return 0
+
+
+def cmd_gui(args):
+    """La plancia nel browser, senza smettere di essere un comando.
+
+    Il server sta in primo piano e muore con questo processo: nessun fork,
+    nessun plist, niente che resti acceso quando il terminale se ne va
+    (CLAUDE.md, invariante 1).
+
+    Gli passa questo stesso modulo come `cli`: le azioni della pagina
+    chiamano `cmd_reap` e `cmd_stop` qui sopra e non una loro copia, cosi' le
+    quattro prove restano scritte in un posto solo.
+    """
+    from faro import web
+    return web.serve(cli=sys.modules[__name__], porta=args.porta,
+                     apri=not args.senza_browser)
+
+
+def cmd_annuncia(args):
+    from faro import annuncio
+    return annuncio.main(args)
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="faro", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--version", "--versione", action="version", version=f"faro {__version__}")
+    sub = p.add_subparsers(dest="cmd")
+
+    # I nomi italiani restano come alias, e non per nostalgia: sono nelle dita
+    # di chi usa faro da prima della traduzione, stanno negli appunti e nelle
+    # note lasciate sulla lavagna. Un rinominamento che rompe quello che
+    # qualcuno ha gia' scritto si paga ogni giorno; un alias costa una parola.
+    s = sub.add_parser("status", aliases=["stato"], help="the board")
+    s.add_argument("--only", "--solo", dest="solo", help="layers, comma separated")
+    s.add_argument("--details", "--dettagli", dest="dettagli", action="store_true",
+                   help="one process per row instead of one kind per row")
+    s.set_defaults(func=cmd_stato)
+
+    s = sub.add_parser("watch", aliases=["vivo"], help="the board, refreshed")
+    s.add_argument("--every", "--ogni", dest="ogni", type=int, default=5)
+    s.add_argument("--details", "--dettagli", dest="dettagli", action="store_true")
+    s.set_defaults(func=cmd_vivo)
+
+    s = sub.add_parser("orphans", aliases=["orfani"],
+                       help="processes left behind by dead sessions")
+    s.set_defaults(func=cmd_orfani)
+
+    s = sub.add_parser("reap", help="close the orphans (a dry run without --execute)")
+    s.add_argument("--execute", "--esegui", dest="esegui", action="store_true")
+    s.add_argument("--older-than", "--piu-vecchi-di", dest="piu_vecchi_di",
+                   type=int, default=0, metavar="SECONDS")
+    s.set_defaults(func=cmd_reap)
+
+    s = sub.add_parser("stop", help="stop a launchd label or a pid")
+    s.add_argument("cosa", metavar="WHAT")
+    s.add_argument("--for-good", "--per-sempre", dest="per_sempre", action="store_true",
+                   help="also disable the automatic restart")
+    s.set_defaults(func=cmd_stop)
+
+    s = sub.add_parser("space", aliases=["spazio"],
+                       help="what to close so a job fits")
+    s.add_argument("quanto", metavar="HOW MUCH", help="for example 5G")
+    s.set_defaults(func=cmd_spazio)
+
+    s = sub.add_parser("tokens", aliases=["token"],
+                       help="where the tokens went, and who spent them")
+    s.add_argument("--hours", "--ore", dest="ore", type=int, metavar="N")
+    s.add_argument("--days", "--giorni", dest="giorni", type=int, metavar="N")
+    s.set_defaults(func=cmd_token)
+
+    s = sub.add_parser("night", aliases=["notte"],
+                       help="going to bed: cleans up and unblocks, opens nothing")
+    s.add_argument("--execute", "--esegui", dest="esegui", action="store_true")
+    s.set_defaults(func=cmd_notte)
+
+    s = sub.add_parser("morning", aliases=["mattina"], help="what happened while you slept")
+    s.set_defaults(func=cmd_mattina)
+
+    s = sub.add_parser("json", help="everything, in json")
+    s.set_defaults(func=cmd_json)
+
+    s = sub.add_parser("schedules", aliases=["pianifica"],
+                       help="the schedules of the scheduled tasks")
+    s.add_argument("--import", "--importa", dest="importa", metavar="FILE",
+                   help="the json of list_scheduled_tasks, - for stdin")
+    s.set_defaults(func=cmd_pianifica)
+
+    s = sub.add_parser("gui", help="the board in the browser, in the foreground")
+    s.add_argument("--port", "--porta", dest="porta", type=int, default=0,
+                   help="normally a free port picked at startup")
+    s.add_argument("--no-browser", "--senza-browser", dest="senza_browser",
+                   action="store_true", help="do not open the browser, just print the address")
+    s.set_defaults(func=cmd_gui)
+
+    s = sub.add_parser("announce", aliases=["annuncia"],
+                       help="notify only if there is something to say")
+    s.add_argument("--dry-run", "--prova", dest="prova", action="store_true",
+                   help="says what it would say, without notifying anything")
+    s.add_argument("--no-boa", "--senza-boa", dest="senza_boa", action="store_true",
+                   help="do not write on the shared blackboard")
+    s.set_defaults(func=cmd_annuncia)
+
+    # `faro` on its own, and `faro --dettagli`, mean `faro stato`. The board is
+    # the thing you want nine times out of ten and should not need a noun.
+    argv = list(sys.argv[1:] if argv is None else argv)
+    known = set(sub.choices)
+    if not argv or (argv[0] not in known and argv[0] not in ("-h", "--help", "--versione")):
+        argv = ["stato"] + argv
+
+    args = p.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

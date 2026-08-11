@@ -38,7 +38,7 @@ qui.
 
 ## Perche' non riscrive le quattro prove
 
-Le azioni chiamano `cmd_reap` e `cmd_stop` di `bin/faro`, gli stessi che gira
+Le azioni chiamano `cmd_reap` e `cmd_stop` di `faro.cli`, gli stessi che gira
 la CLI, e ne catturano l'uscita. La lista degli orfani viene ricalcolata li'
 dentro come sempre (invariante 4), la catena degli antenati resta esclusa
 (invariante 5), e le quattro prove restano scritte in un posto solo. Se un
@@ -49,8 +49,6 @@ prove e' una GUI che un giorno chiude quello che la CLI protegge.
 import contextlib
 import hmac
 import http.server
-import importlib.machinery
-import importlib.util
 import io
 import json
 import os
@@ -188,18 +186,14 @@ class _Letture:
 # -------------------------------------------------------------------- azioni
 
 def _cli_modulo():
-    """`bin/faro` come modulo, quando non ce lo passa gia' lui.
+    """La CLI come modulo, quando non ce la passa gia' lui.
 
-    Serve ai test e a chi importa `faro.web` da solo. Non ha estensione .py,
-    quindi va caricato per percorso: e' comunque meglio che riscrivere qui la
-    logica di reap.
+    Serve ai test e a chi importa `faro.web` da solo. L'import sta qui dentro e
+    non in cima al file perche' `faro.cli` importa `faro.web` per il comando
+    gui: al livello del modulo sarebbe un cerchio.
     """
-    percorso = os.path.join(os.path.dirname(HERE), "bin", "faro")
-    spec = importlib.util.spec_from_loader(
-        "faro_cli", importlib.machinery.SourceFileLoader("faro_cli", percorso))
-    modulo = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(modulo)
-    return modulo
+    from faro import cli
+    return cli
 
 
 # Le azioni si fanno una alla volta: catturano stdout, che e' del processo e
