@@ -226,6 +226,16 @@ def azione_ferma(cli, pid):
     return _esegui(cli.cmd_stop, cosa=str(int(pid)), per_sempre=False)
 
 
+def azione_notte(cli, esegui):
+    """La stessa `faro notte`, con o senza --esegui.
+
+    Come per reap, la GUI chiama la funzione della CLI invece di rifare il
+    lavoro: cosi' l'invariante 0, quella che dice che faro non apre mai niente,
+    sta scritta in un posto solo e non puo' divergere fra le due strade.
+    """
+    return _esegui(cli.cmd_notte, esegui=bool(esegui))
+
+
 # ------------------------------------------------------------------ il server
 
 _CONTROLLO = re.compile(r"[\x00-\x1f\x7f]")
@@ -379,6 +389,15 @@ class _Manico(http.server.BaseHTTPRequestHandler):
             if esegui:
                 self.letture.scade()
                 self.log_error("chiusi gli orfani dalla gui")
+            return self._json(200, esito)
+
+        if percorso == "/api/notte":
+            # Stessa regola di reap: solo il booleano vero vale come si'.
+            esegui = corpo.get("esegui") is True
+            esito = azione_notte(self.cli, esegui)
+            if esegui:
+                self.letture.scade()
+                self.log_error("eseguita la notte dalla gui")
             return self._json(200, esito)
 
         if percorso == "/api/ferma":

@@ -329,3 +329,20 @@ dialog menu { display: flex; gap: var(--s2); justify-content: flex-end;
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+
+/* La sezione del "vado a letto". Sta in alto e si vede, perche' e' il gesto
+   che si fa una volta al giorno e che nessuno ricorda a memoria. */
+.notte {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; margin: 1rem 0; padding: 0.9rem 1.1rem;
+  border: 1px solid var(--bordo); border-radius: 12px;
+  background: var(--pannello);
+}
+.notte p { margin: 0.25rem 0 0; opacity: 0.75; font-size: 0.86rem; max-width: 54ch; }
+.notte button {
+  flex: none; padding: 0.6rem 1.1rem; border-radius: 9px;
+  border: 1px solid var(--bordo); background: var(--pannello);
+  color: inherit; font: inherit; cursor: pointer;
+}
+.notte button:hover { border-color: currentColor; }

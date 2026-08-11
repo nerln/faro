@@ -69,6 +69,9 @@
     clearTimeout(nota._t);
     nota._t = setTimeout(() => { n.hidden = true; }, male ? 30000 : 14000);
   }
+  const bottoneNotte = document.getElementById("bottone-notte");
+  if (bottoneNotte) bottoneNotte.addEventListener("click", chiediNotte);
+
   document.addEventListener("click", (e) => {
     if (e.target === $("nota")) $("nota").hidden = true;
   });
@@ -273,6 +276,34 @@
       nota(esito.testo || "fatto.", esito.codice !== 0);
       aggiorna();
     } catch (e) { if (e.message !== "403") nota("non ha funzionato: " + e.message, true); }
+  }
+
+  async function chiediNotte() {
+    let prova;
+    try {
+      prova = await api("/api/notte", { esegui: false });
+    } catch (e) {
+      if (e.message !== "403") nota("non ha funzionato: " + e.message, true);
+      return;
+    }
+    const ok = await chiedi({
+      titolo: "Chiudo tutto quello che non serve stanotte?",
+      testo: "Questo e' quello che farebbe `faro notte`. Toglie, non aggiunge: " +
+             "non viene aperta nessuna sessione e non viene forzato niente in coda.",
+      pre: prova.testo,
+      conseguenza: "Le sessioni ferme vengono chiuse, ma i loro transcript restano: " +
+        "si riaprono con `claude --resume`. Quello che sta lavorando non viene toccato, " +
+        "e nemmeno la sessione da cui gira questa pagina.",
+      verbo: "buonanotte",
+    });
+    if (!ok) return;
+    try {
+      const esito = await api("/api/notte", { esegui: true });
+      nota(esito.testo || "fatto.", esito.codice !== 0);
+      aggiorna();
+    } catch (e) {
+      if (e.message !== "403") nota("non ha funzionato: " + e.message, true);
+    }
   }
 
   async function chiediReap() {

@@ -84,6 +84,8 @@ faro gui                  # the same board in the browser, in the foreground
 faro annuncia             # says something only if there is something to say
 faro spazio 5G            # what to close so a 5G job fits, and whether it can
 faro token                # where the tokens went today, and who spent them
+faro notte                # going to bed: clears blocks, opens nothing
+faro mattina              # what happened while you slept
 faro json                 # everything, for another program
 ```
 
