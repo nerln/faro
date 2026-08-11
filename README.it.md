@@ -71,6 +71,11 @@ mostra una riga illeggibile e il resto della plancia continua.
 
 ## Comandi
 
+I nomi qui sotto sono gli alias italiani, e funzionano tutti. Il programma però
+parla inglese: `faro status`, `faro watch`, `faro orphans`, `faro space`,
+`faro tokens`, `faro night`, `faro morning`, `faro announce`, `faro schedules`,
+e i flag `--execute`, `--only`, `--details`.
+
 ```bash
 faro                      # la plancia
 faro --dettagli           # un processo per riga invece di un tipo per riga
@@ -85,8 +90,8 @@ faro gui                  # la stessa plancia nel browser, in primo piano
 faro annuncia             # se c'è qualcosa da sapere lo dice, se no tace
 faro spazio 5G            # cosa chiudere perché un lavoro da 5G entri, e se si può
 faro token                # dove sono andati i token oggi, e chi li ha spesi
-faro notte                # vado a letto: sblocca la coda, non apre niente
-faro mattina              # cosa e' successo mentre dormivi
+faro notte                # vado a letto: pulisce e sblocca, non apre niente
+faro mattina              # cosa è successo mentre dormivi
 faro json                 # tutto, per un altro programma
 ```
 

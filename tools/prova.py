@@ -847,5 +847,33 @@ class Notte(unittest.TestCase):
         ferme = {s["pid"] for s in notte.sessioni_ferme()}
         self.assertEqual(ferme & mia, set())
 
+
+class NomiDegliStrati(unittest.TestCase):
+    """`--only` accetta sia la chiave interna sia il nome che la plancia stampa.
+
+    Le chiavi sono dati e sono rimaste italiane, i nomi si leggono e sono
+    inglesi. Chi scrive `--only orphans` sta digitando quello che vede: prima
+    non funzionava, e il README lo prometteva.
+    """
+
+    def test_il_nome_inglese_trova_la_chiave(self):
+        self.assertEqual(board.strato_da_nome("orphans"), "orfani")
+        self.assertEqual(board.strato_da_nome("scheduled"), "pianificati")
+        self.assertEqual(board.strato_da_nome("SESSIONS"), "sessioni")
+
+    def test_la_chiave_interna_continua_a_valere(self):
+        for k in board.ORDER:
+            self.assertEqual(board.strato_da_nome(k), k)
+
+    def test_una_parola_sconosciuta_torna_com_era(self):
+        """Non si indovina: se non e' uno strato, filtra su niente e la
+        plancia esce vuota, che e' la risposta giusta a un nome sbagliato."""
+        self.assertEqual(board.strato_da_nome("pippo"), "pippo")
+
+    def test_ogni_nome_stampato_e_risolvibile(self):
+        for k in board.ORDER:
+            nome = board.TITLES[k].partition("  ")[0]
+            self.assertEqual(board.strato_da_nome(nome), k)
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -44,20 +44,20 @@ Six layers on one screen, with the memory first, because the memory is the reaso
 came:
 
 ```
-faro   memoria 10.8GB di 16.0GB   compressa 2.3GB   swap 3.4GB di 5.0GB   pageout 110300
-       1 permanenti  7 pianificati  1 rada  5 sessioni  14 servizi  3 orfani
-       la macchina e' in swap: 3.4GB, 110300 pageout, 5 sessioni vive.
-       3 processi orfani tengono 10.8MB   ->  faro reap
+faro   memory 10.8GB of 16.0GB   compressed 2.3GB   swap 3.4GB of 5.0GB   pageouts 110300
+       1 persistent  7 scheduled  1 rada  5 sessions  14 services  3 orphans
+       the machine is in swap: 3.4GB, 110300 pageouts, 5 live sessions.
+       3 orphaned processes are holding 10.8MB   ->  faro reap
 ```
 
 | layer | what is in it |
 |---|---|
-| `permanenti` | always up, session or no session |
-| `pianificati` | will start on their own, on a clock |
+| `persistent` | always up, session or no session |
+| `scheduled` | will start on their own, on a clock |
 | `rada` | the queue of heavy jobs |
-| `sessioni` | Claude Code alive right now |
-| `servizi` | started by a session, and still held by it |
-| `orfani` | the session is gone, nobody will stop these |
+| `sessions` | Claude Code alive right now |
+| `services` | started by a session, and still held by it |
+| `orphans` | the session is gone, nobody will stop these |
 
 Anything that is merely fine gets one line. Anything wrong gets a line and a mark. The
 screen has to fit in a terminal window without scrolling on a normal day, because a panel
@@ -72,20 +72,20 @@ faro shows one unreadable row and the rest of the board carries on.
 
 ```bash
 faro                      # the board
-faro --dettagli           # one process per row instead of one kind per row
-faro vivo                 # the same, refreshed every 5 seconds
-faro --solo orfani,rada   # only some layers
-faro orfani               # only what nobody is going to stop
+faro --details            # one process per row instead of one kind per row
+faro watch                # the same, refreshed every 5 seconds
+faro --only orphans,rada  # only some layers
+faro orphans              # only what nobody is going to stop
 faro reap                 # what would be closed. closes nothing
-faro reap --esegui        # closes them
+faro reap --execute       # closes them
 faro stop <label>         # stop a launchd job
 faro stop <pid>           # stop a process
+faro space 5G             # what to close so a 5G job fits, and whether it can
+faro tokens               # where the tokens went today, and who spent them
+faro night                # going to bed: cleans up and unblocks, opens nothing
+faro morning              # what happened while you slept
 faro gui                  # the same board in the browser, in the foreground
-faro annuncia             # says something only if there is something to say
-faro spazio 5G            # what to close so a 5G job fits, and whether it can
-faro token                # where the tokens went today, and who spent them
-faro notte                # going to bed: clears blocks, opens nothing
-faro mattina              # what happened while you slept
+faro announce             # says something only if there is something to say
 faro json                 # everything, for another program
 ```
 
@@ -96,15 +96,15 @@ thing you actually need at that moment: **which windows to close so it fits, and
 whether an answer exists at all.**
 
 ```
-$ faro spazio 5G
-serve 5.0GB   rada adesso ne concede 3.5GB   memoria usata 10.1GB di 16.0GB
-   swap gia' in uso: 4.3GB
+$ faro space 5G
+needs 5.0GB   rada allows 3.5GB right now   memory used 10.1GB of 16.0GB
+   swap already in use: 4.3GB
 
-  chiudendo, in quest'ordine:
-        1.4GB  sessioni di Claude Code      (12 processi)
-               perdi: niente: i transcript restano e si riprendono con claude --resume
-      492.3MB  Chrome
-               perdi: le schede, che Chrome riapre da solo al riavvio
+  closing, in this order:
+        1.4GB  Claude Code sessions         (12 processes)
+               you lose: nothing: the transcripts stay, and resume with claude --resume
+      492.3MB  Chrome                       (7 processes)
+               you lose: the tabs, which Chrome reopens by itself on restart
 ```
 
 Candidates come ranked by what closing them costs you, not by size: sessions whose
@@ -114,18 +114,18 @@ an editor that may hold unsaved work. The system itself is never a candidate.
 The estimate is stated as an estimate. Closing an application holding 1 GB of RSS does
 not hand rada back 1 GB: shared pages are counted more than once and compressed pages
 weigh less than they measure. When closing everything closable still is not enough,
-`faro spazio` says so, rather than suggesting you force it.
+`faro space` says so, rather than suggesting you force it.
 
 ## Where the tokens went
 
 ```
-$ faro token
-token da mezzanotte   43 transcript toccati
+$ faro tokens
+tokens since midnight   43 transcripts touched
 
-  in uscita 3.5M   cache letta 1086.8M   cache scritta 31.2M
-  quello che conta e' l'uscita: la cache letta costa una frazione.
+  out 3.5M   cache read 1086.8M   cache written 31.2M
+  the number that matters is out: cache reads cost a fraction.
 
-  sessioni: 3.4M   subagenti: 63k
+  sessions: 3.4M   subagents: 63k
 ```
 
 Three things make this less trivial than it looks. The same `usage` block appears more
@@ -142,7 +142,7 @@ substring check before any JSON parsing. It answers in about a third of a second
 - **It keeps no state.** The only file it writes is `~/.faro/pianificati.json`, the cache
   of the schedules the Claude Code application does not put on disk. Deleting `~/.faro`
   changes nothing about how the machine behaves.
-- **It kills nothing on its own.** `reap` without `--esegui` is a dry run. No timer, no
+- **It kills nothing on its own.** `reap` without `--execute` is a dry run. No timer, no
   automatic cleanup, nothing that acts while you sleep.
 - **It never runs what it reads.** The command lines on the board are truncated text.
   They do not go through a shell, they are not executed, and they do not go into a model.
@@ -174,7 +174,7 @@ that three sessions, open for half an hour, were using. Whatever fails only the 
 test does not appear among the orphans at all: it goes back to the services, with the
 reason written next to it.
 
-The list is recomputed at the moment `reap --esegui` starts, and never taken from an
+The list is recomputed at the moment `reap --execute` starts, and never taken from an
 earlier screen. A pid printed ten minutes ago may since have been reused by something
 else, and a stale pid is exactly how a cleanup tool kills the wrong thing.
 
@@ -254,8 +254,8 @@ tests is a GUI that one day closes what the CLI protects.
 ## Saying it once, and only when it matters
 
 ```bash
-faro annuncia --prova    # what it would say, without notifying anything
-faro annuncia            # a macOS notification, only if there is something to say
+faro announce --dry-run  # what it would say, without notifying anything
+faro announce            # a macOS notification, only if there is something to say
 ```
 
 Two rules, and they are the whole design of that file:

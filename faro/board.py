@@ -113,7 +113,24 @@ def _collapse(group):
     return out
 
 
+def strato_da_nome(parola):
+    """La chiave interna di uno strato, dato il nome che la plancia stampa.
+
+    Le chiavi sono dati e sono rimaste italiane; i nomi si leggono e sono
+    inglesi. Chi scrive `--only orphans` sta digitando quello che vede, e
+    aveva ragione: prima non funzionava, e il README lo prometteva.
+    """
+    parola = (parola or "").strip().lower()
+    if parola in TITLES:
+        return parola
+    for chiave, titolo in TITLES.items():
+        if titolo.partition("  ")[0].lower() == parola:
+            return chiave
+    return parola
+
+
 def render(snap, only=None, larghezza=None, dettagli=False):
+    only = [strato_da_nome(x) for x in only] if only else None
     ink = Ink(_tty())
     width = larghezza or (os.get_terminal_size().columns if _tty() else 100)
     rows = snap["righe"]
