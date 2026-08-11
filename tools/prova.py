@@ -51,7 +51,7 @@ class Orfani(unittest.TestCase):
         procs[900]["age"] = 13
         rows = inventory.orfani(procs, loaded, cwds, ports)
         self.assertEqual([r["strato"] for r in rows], ["servizi"])
-        self.assertIn("troppo presto", rows[0]["dettaglio"])
+        self.assertIn("too soon", rows[0]["dettaglio"])
 
     def test_a_session_still_writing_keeps_its_server(self):
         import tempfile
@@ -67,7 +67,7 @@ class Orfani(unittest.TestCase):
                 cwds[900] = f"{probe.SCRATCH_ROOT}/{proj}/{uuid}/scratchpad"
                 rows = inventory.orfani(procs, loaded, cwds, ports)
                 self.assertEqual([r["strato"] for r in rows], ["servizi"])
-                self.assertIn("ancora scrivendo", rows[0]["dettaglio"])
+                self.assertIn("still writing", rows[0]["dettaglio"])
             finally:
                 inventory.CLAUDE = vecchio_claude
 
@@ -84,7 +84,7 @@ class Orfani(unittest.TestCase):
         cwds[900] = drive
         rows = inventory.orfani(procs, loaded, cwds, ports, cartelle_vive=[drive])
         self.assertEqual([r["strato"] for r in rows], ["servizi"])
-        self.assertIn("sessione viva lavora", rows[0]["dettaglio"])
+        self.assertIn("live session is working", rows[0]["dettaglio"])
 
     def test_a_folder_below_a_live_session_counts_too(self):
         procs, loaded, cwds, ports = self.base()
@@ -146,7 +146,7 @@ class Sessioni(unittest.TestCase):
         serv = [r for r in rows if r["strato"] == "servizi"]
         self.assertEqual(len(sess), 1)
         self.assertEqual(sess[0]["rss"], 110 * 1024 * 1024)
-        self.assertEqual(serv[0]["nome"], "server MCP di plancia")
+        self.assertEqual(serv[0]["nome"], "plancia MCP server")
 
     def test_a_fresh_shell_is_not_a_service(self):
         """Otherwise every board shows the command that drew it."""
@@ -179,8 +179,8 @@ class Sparsi(unittest.TestCase):
         # Both are servers worth a line: the daemon that holds the bridge, and
         # the codex process under it that holds the port.
         self.assertEqual({r["nome"] for r in rows},
-                         {"app-server di codex", "ponte agentbridge"})
-        codex = [r for r in rows if r["nome"] == "app-server di codex"][0]
+                         {"codex app server", "agentbridge bridge"})
+        codex = [r for r in rows if r["nome"] == "codex app server"][0]
         self.assertIn("4500", codex["dettaglio"])
 
     def test_the_desktop_app_helpers_are_left_out(self):
@@ -206,7 +206,7 @@ class Launchd(unittest.TestCase):
         pian = inventory.pianificati({}, {}, [agent])
         self.assertEqual(perm, [])
         self.assertEqual(len(pian), 1)
-        self.assertEqual(pian[0]["quando"], "ogni 60s")
+        self.assertEqual(pian[0]["quando"], "every 60s")
 
     def test_a_task_of_claude_code_says_when_the_schedule_is_unknown(self):
         import tempfile
@@ -216,7 +216,7 @@ class Launchd(unittest.TestCase):
                 f.write("---\nname: prova-task\ndescription: fa una cosa\n---\ncorpo\n")
             rows = inventory.pianificati_claude(root=d, cache_path="/tmp/non-esiste")
             self.assertEqual(len(rows), 1)
-            self.assertIn("noto solo all'app", rows[0]["quando"])
+            self.assertIn("known only to the app", rows[0]["quando"])
             self.assertIn("fa una cosa", rows[0]["dettaglio"])
 
     def test_a_scheduled_job_is_never_dated_by_its_log(self):
@@ -242,8 +242,8 @@ class Launchd(unittest.TestCase):
         rows = inventory.pianificati({}, {}, [agent])
         os.unlink(vecchio)
         self.assertEqual(len(rows), 1)
-        self.assertNotIn("ultima 5", rows[0]["dettaglio"])
-        self.assertNotIn("fa  ", rows[0]["dettaglio"])
+        self.assertNotIn("last 5", rows[0]["dettaglio"])
+        self.assertNotIn("ago  ", rows[0]["dettaglio"])
         self.assertIsNone(rows[0]["eta"])
 
     def test_other_peoples_agents_are_not_shown(self):
@@ -258,7 +258,7 @@ class Launchd(unittest.TestCase):
     def test_two_calendar_entries_read_as_two_times(self):
         agent = {"label": "it.nerln.x", "calendar": [{"Hour": 9, "Minute": 30},
                                                      {"Hour": 19, "Minute": 30}]}
-        self.assertEqual(inventory._schedule_text(agent), "alle 09:30 e 19:30")
+        self.assertEqual(inventory._schedule_text(agent), "at 09:30 and 19:30")
 
 
 class Tabella(unittest.TestCase):
@@ -267,10 +267,10 @@ class Tabella(unittest.TestCase):
                                      "swap_total": 0, "swap_used": 0, "pageouts": 0},
                 "righe": []}
         out = board.render(snap, larghezza=100)
-        self.assertIn("nessun orfano", out)
+        self.assertIn("no orphans", out)
 
     def test_identical_services_collapse_to_one_line(self):
-        rows = [{"strato": "servizi", "nome": "ponte agentbridge", "stato": "in servizio",
+        rows = [{"strato": "servizi", "nome": "agentbridge bridge", "stato": "in servizio",
                  "pid": i, "rss": 10 * 1024 * 1024, "eta": 60 * i, "quando": "",
                  "dove": "", "dettaglio": "porta 4501", "azione": None, "allarme": False}
                 for i in range(1, 8)]
@@ -512,8 +512,18 @@ class PaginaSola(unittest.TestCase):
         self.assertTrue(callable(cli._my_ancestors))
 
     def test_le_parole_degli_strati_sono_quelle_della_plancia(self):
+        """La gui non ha un suo elenco di nomi: prende quelli di board.TITLES.
+
+        Prima questo si verificava contro board.ORDER, che sono le chiavi
+        interne, e funzionava solo perche' i nomi visibili erano uguali alle
+        chiavi. Tradotta la plancia in inglese le due cose si sono separate, ed
+        e' giusto: le chiavi sono dati e non cambiano, i nomi si leggono. Qui
+        si verifica quello che conta davvero, cioe' che siano una copia sola.
+        """
         nomi = [s["nome"] for s in web._strati()]
-        self.assertEqual(nomi, board.ORDER)
+        attesi = [board.TITLES[k].partition("  ")[0] for k in board.ORDER]
+        self.assertEqual(nomi, attesi)
+        self.assertEqual(len(nomi), len(board.ORDER))
 
 
 def _snap(righe=(), **memoria):
@@ -541,19 +551,24 @@ class Annuncio(unittest.TestCase):
         righe = [_riga("orfani", stato="orfano", pid=900, rss=11 * 1024 ** 2, eta=54000)]
         notizie = annuncio.forti(annuncio.valuta(_snap(righe)))
         self.assertEqual(len(notizie), 1)
-        self.assertIn("1 processo orfano", notizie[0]["titolo"])
+        self.assertIn("1 orphaned process", notizie[0]["titolo"])
         self.assertIn("11.0MB", notizie[0]["testo"])
 
     def test_lo_swap_sopra_i_due_giga_vale_una_notifica_sotto_no(self):
         alto = annuncio.valuta(_snap(swap_used=3 * 1024 ** 3))
-        self.assertEqual([n["gravita"] for n in alto], ["alta"])
+        self.assertEqual([n["gravita"] for n in alto], ["high"])
         basso = annuncio.valuta(_snap(swap_used=700 * 1024 ** 2))
-        self.assertEqual([n["gravita"] for n in basso], ["media"])
+        self.assertEqual([n["gravita"] for n in basso], ["medium"])
         self.assertEqual(annuncio.forti(basso), [])
 
     def test_un_job_pianificato_uscito_male_vale_una_notifica(self):
+        # La dicitura e' quella che scrive inventory.pianificati, e le due cose
+        # sono accoppiate: se una cambia lingua e l'altra no, l'annuncio smette
+        # di leggere il codice di uscita e nessuno se ne accorge finche' un job
+        # non fallisce davvero. E' successo traducendo, e questo test lo ha
+        # fermato.
         righe = [_riga("pianificati", nome="dev.stiva.ccd-percorsi", allarme=True,
-                       dettaglio="12 esecuzioni dal caricamento  ·  ULTIMA USCITA 78")]
+                       dettaglio="12 runs since load  ·  LAST EXIT 78")]
         notizie = annuncio.forti(annuncio.valuta(_snap(righe)))
         self.assertEqual(len(notizie), 1)
         self.assertIn("dev.stiva.ccd-percorsi", notizie[0]["titolo"])
@@ -621,7 +636,7 @@ class Spazio(unittest.TestCase):
     def test_se_ci_sta_gia_non_chiede_di_chiudere_niente(self):
         from faro import spazio
         testo = spazio.racconta(1024 ** 3, mem=self.mem(5), procs={})
-        self.assertIn("entra cosi' com'e'", testo)
+        self.assertIn("it fits as it is", testo)
 
     def test_dice_chiaro_quando_non_basta_chiudere_tutto(self):
         """Il caso vero: 5 GB su una macchina occupata, e nessun elefante."""
@@ -629,8 +644,8 @@ class Spazio(unittest.TestCase):
         procs = {i: {"pid": i, "ppid": 1, "rss": 50 * 1024 ** 2, "age": 10,
                      "command": "/System/Library/qualcosa"} for i in range(10)}
         testo = spazio.racconta(5 * 1024 ** 3, mem=self.mem(13), procs=procs)
-        self.assertIn("NON BASTA", testo)
-        self.assertIn("rada che te lo sta dicendo", testo)
+        self.assertIn("NOT ENOUGH", testo)
+        self.assertIn("rada telling you", testo)
 
     def test_il_sistema_non_finisce_mai_fra_le_cose_da_chiudere(self):
         from faro import spazio
@@ -648,7 +663,7 @@ class Spazio(unittest.TestCase):
                 "command": "/x/claude-code/2.1.222/claude.app/y"},
         }
         scelti, _, _ = spazio.piano(6 * 1024 ** 3, self.mem(12), procs)
-        self.assertEqual(scelti[0]["nome"], "sessioni di Claude Code")
+        self.assertEqual(scelti[0]["nome"], "Claude Code sessions")
 
 
 class BigliettiFermi(unittest.TestCase):
@@ -656,7 +671,7 @@ class BigliettiFermi(unittest.TestCase):
 
     def test_un_biglietto_senza_processo_e_un_fantasma(self):
         nota, sospetto = inventory._chi_aspetta(999999, {})
-        self.assertIn("fantasma", nota)
+        self.assertIn("ghost", nota)
         self.assertTrue(sospetto)
 
     def test_un_wrapper_riadottato_vuol_dire_sessione_morta(self):
@@ -664,7 +679,7 @@ class BigliettiFermi(unittest.TestCase):
         procs = {50: {"pid": 50, "ppid": 1, "rss": 0, "age": 11000,
                       "command": "python3 rada run --need 5G"}}
         nota, sospetto = inventory._chi_aspetta(50, procs)
-        self.assertIn("sessione", nota)
+        self.assertIn("session", nota)
         self.assertTrue(sospetto)
 
     def test_un_wrapper_con_genitore_vivo_non_e_una_notizia(self):
@@ -719,15 +734,15 @@ class Conto(unittest.TestCase):
     def test_i_subagenti_si_contano_a_parte(self):
         from faro import conto
         p = os.path.join(conto.PROGETTI, "-x", "subagents", "agent-1.jsonl")
-        self.assertEqual(conto._chi(p)[1], "subagenti")
+        self.assertEqual(conto._chi(p)[1], "subagents")
         self.assertEqual(conto._chi(os.path.join(conto.PROGETTI, "-x", "s.jsonl"))[1],
-                         "sessioni")
+                         "sessions")
 
     def test_una_finestra_vuota_lo_dice(self):
         from faro import conto
         import tempfile
         with tempfile.TemporaryDirectory() as d:
-            self.assertIn("nessun token", conto.racconta(root=d))
+            self.assertIn("no tokens", conto.racconta(root=d))
 
 
 class SessioniDaTerminale(unittest.TestCase):
@@ -783,7 +798,7 @@ class Notte(unittest.TestCase):
         """La riga deve esserci anche quando non c'e' niente da fare."""
         from faro import notte
         testo = notte.racconta(self.piano())
-        self.assertIn("non apro niente", testo)
+        self.assertIn("opens nothing", testo)
 
     def test_chiudere_alza_il_bilancio_di_rada(self):
         from faro import notte
@@ -798,7 +813,7 @@ class Notte(unittest.TestCase):
                  "rss": 1 * g, "eta": 100, "pid": None, "quando": "", "dove": "",
                  "dettaglio": "", "azione": None, "allarme": True}]
         p = self.piano(usata_gb=11, ferme=[{"pid": 1, "rss": 2 * g}], coda=coda)
-        self.assertIn("ENTRA", notte.racconta(p))
+        self.assertIn("FITS", notte.racconta(p))
 
     def test_e_dice_quanto_manca_quando_non_entra(self):
         from faro import notte
@@ -807,8 +822,8 @@ class Notte(unittest.TestCase):
                  "rss": 9 * g, "eta": 100, "pid": None, "quando": "", "dove": "",
                  "dettaglio": "", "azione": None, "allarme": True}]
         testo = notte.racconta(self.piano(coda=coda))
-        self.assertIn("mancano", testo)
-        self.assertIn("faro spazio", testo)
+        self.assertIn("short", testo)
+        self.assertIn("faro space", testo)
 
     def test_il_rapporto_scrive_che_non_ha_aperto_niente(self):
         from faro import notte
@@ -819,7 +834,7 @@ class Notte(unittest.TestCase):
             try:
                 path = notte.rapporto(self.piano(), 0, 0)
                 testo = open(path).read()
-                self.assertIn("non e' stata aperta nessuna sessione", testo)
+                self.assertIn("no session was opened", testo)
                 self.assertIn("claude --resume", testo)
             finally:
                 notte.FARO_HOME = vecchia

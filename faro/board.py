@@ -14,12 +14,12 @@ from .inventory import _human_age, _human_bytes
 ORDER = ["permanenti", "pianificati", "rada", "sessioni", "servizi", "orfani"]
 
 TITLES = {
-    "permanenti": "permanenti        girano sempre, anche a sessioni chiuse",
-    "pianificati": "pianificati       partiranno da soli, a orario",
-    "rada": "rada              coda dei lavori pesanti",
-    "sessioni": "sessioni          Claude Code vivo adesso",
-    "servizi": "servizi           avviati da una sessione, e da lei tenuti",
-    "orfani": "orfani            la sessione non c'e' piu', nessuno li fermera'",
+    "permanenti": "persistent        always up, session or no session",
+    "pianificati": "scheduled         will start on their own, on a clock",
+    "rada": "rada              the queue of heavy jobs",
+    "sessioni": "sessions          Claude Code alive right now",
+    "servizi": "services          started by a session, and still held by it",
+    "orfani": "orphans           the session is gone, nobody will stop these",
 }
 
 
@@ -54,11 +54,12 @@ class Ink:
 
 
 def _mark(row, ink):
-    if row["stato"] == "orfano":
+    if row["stato"] == "orphan":
         return ink.red("!")
     if row["allarme"]:
         return ink.yellow("!")
-    if row["stato"] in ("attivo", "viva", "in servizio", "in esecuzione", "in orario"):
+    if row["stato"] in ("up", "alive", "in service", "running",
+                        "on schedule", "enabled"):
         return ink.green("*")
     return ink.dim("-")
 
@@ -67,13 +68,13 @@ def _memory_line(mem, ink):
     used = _human_bytes(mem["used"])
     total = _human_bytes(mem["total"])
     swap = mem["swap_used"]
-    swap_txt = f"{_human_bytes(swap)} di {_human_bytes(mem['swap_total'])}"
+    swap_txt = f"{_human_bytes(swap)} of {_human_bytes(mem['swap_total'])}"
     if swap > 1024 ** 3:
         swap_txt = ink.red(swap_txt)
     elif swap > 0:
         swap_txt = ink.yellow(swap_txt)
-    return (f"memoria {used} di {total}   compressa {_human_bytes(mem['compressed'])}"
-            f"   swap {swap_txt}   pageout {mem['pageouts']}")
+    return (f"memory {used} of {total}   compressed {_human_bytes(mem['compressed'])}"
+            f"   swap {swap_txt}   pageouts {mem['pageouts']}")
 
 
 def _collapse(group):
@@ -93,20 +94,20 @@ def _collapse(group):
         k["eta"] = max(k["eta"], r["eta"] or 0)
         k["allarme"] = k["allarme"] or r["allarme"]
         k["pid"] = r["pid"]
-        for m in re.finditer(r"porta ([\d, ]+)", r.get("dettaglio", "")):
+        for m in re.finditer(r"port[a-z]* ([\d, ]+)", r.get("dettaglio", "")):
             for port in m.group(1).split(","):
                 port = port.strip()
                 if port and port not in k["porte"]:
                     k["porte"].append(port)
     out = []
     for k in sorted(by_kind.values(), key=lambda k: -k["rss"]):
-        detail = f"{k['n']} istanze" if k["n"] > 1 else f"pid {k['pid']}"
+        detail = f"{k['n']} instances" if k["n"] > 1 else f"pid {k['pid']}"
         if k["porte"]:
-            detail += "  ·  porte " + ", ".join(k["porte"])
+            detail += "  ·  ports " + ", ".join(k["porte"])
         out.append({
-            "strato": "servizi", "id": "", "nome": k["nome"], "stato": "in servizio",
+            "strato": "servizi", "id": "", "nome": k["nome"], "stato": "in service",
             "pid": k["pid"], "rss": k["rss"], "eta": k["eta"],
-            "quando": f"x{k['n']}" if k["n"] > 1 else "in servizio",
+            "quando": f"x{k['n']}" if k["n"] > 1 else "in service",
             "dove": "", "dettaglio": detail, "azione": None, "allarme": k["allarme"],
         })
     return out
@@ -119,7 +120,10 @@ def render(snap, only=None, larghezza=None, dettagli=False):
     lines = []
 
     counts = {k: sum(1 for r in rows if r["strato"] == k) for k in ORDER}
-    head = "  ".join(f"{counts[k]} {k}" for k in ORDER if counts[k])
+    # Le chiavi degli strati sono dati e restano quelle. Qui si legge, quindi
+    # si usano i nomi di TITLES, che sono l'unica versione visibile che esista.
+    head = "  ".join(f"{counts[k]} {TITLES[k].partition('  ')[0]}"
+                     for k in ORDER if counts[k])
     orf = counts.get("orfani", 0)
     ram_orfana = sum(r["rss"] for r in rows if r["strato"] == "orfani")
 
@@ -130,18 +134,19 @@ def render(snap, only=None, larghezza=None, dettagli=False):
     # number in that neighbourhood is not a statistic, it is the warning.
     mem = snap["memoria"]
     if mem["swap_used"] > 2 * 1024 ** 3:
-        sessioni_vive = counts.get("sessioni", 0)
+        vive = counts.get("sessioni", 0)
         lines.append("       " + ink.red(
-            f"la macchina e' in swap: {_human_bytes(mem['swap_used'])}, "
-            f"{mem['pageouts']} pageout, {sessioni_vive} sessioni vive. "
-            f"chiudine una prima di avviare altro."))
+            f"the machine is in swap: {_human_bytes(mem['swap_used'])}, "
+            f"{mem['pageouts']} pageouts, {vive} live sessions. "
+            f"close one before starting anything else."))
     elif mem["swap_used"] > 512 * 1024 ** 2:
         lines.append("       " + ink.yellow(
-            f"swap in uso: {_human_bytes(mem['swap_used'])}. tienilo d'occhio."))
+            f"swap in use: {_human_bytes(mem['swap_used'])}. keep an eye on it."))
 
     if orf:
         lines.append("       " + ink.red(
-            f"{orf} processi orfani tengono {_human_bytes(ram_orfana)}"
+            f"{orf} orphaned process{'es' if orf > 1 else ''} "
+            f"{'are' if orf > 1 else 'is'} holding {_human_bytes(ram_orfana)}"
             f"   ->  faro reap"))
     lines.append("")
 
@@ -168,11 +173,11 @@ def render(snap, only=None, larghezza=None, dettagli=False):
             lines.append(line)
             extra = r.get("ultima_riga")
             if extra:
-                lines.append("      " + ink.dim("ultima riga: " + extra[:width - 20]))
+                lines.append("      " + ink.dim("last log line: " + extra[:width - 20]))
         lines.append("")
 
     if not any(r["strato"] == "orfani" for r in rows):
-        lines.append(ink.dim("  nessun orfano. niente da recuperare."))
+        lines.append(ink.dim("  no orphans. nothing to reclaim."))
     return "\n".join(lines)
 
 

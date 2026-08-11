@@ -84,36 +84,36 @@ def valuta(snap):
         vecchio = max((r["eta"] or 0) for r in orfani)
         n = len(orfani)
         notizie.append(_notizia(
-            "orfani", "alta",
-            f"{n} {_plurale(n, 'processo orfano', 'processi orfani')}",
-            f"{_plurale(n, 'tiene', 'tengono')} {_human_bytes(rss)}, "
-            f"il piu' vecchio da {_human_age(vecchio)}. "
-            f"`faro reap` mostra cosa verrebbe chiuso."))
+            "orphans", "high",
+            f"{n} orphaned {_plurale(n, 'process', 'processes')}",
+            f"holding {_human_bytes(rss)}, "
+            f"the oldest for {_human_age(vecchio)}. "
+            f"`faro reap` shows what would be closed."))
 
     swap = mem.get("swap_used", 0)
     if swap > SWAP_ALLARME:
         vive = sum(1 for r in righe if r["strato"] == "sessioni")
         notizie.append(_notizia(
-            "swap", "alta",
-            f"la macchina e' in swap: {_human_bytes(swap)}",
-            f"{mem.get('pageouts', 0)} pageout, {vive} "
-            f"{_plurale(vive, 'sessione viva', 'sessioni vive')}. "
-            f"chiudine una prima di avviare altro."))
+            "swap", "high",
+            f"the machine is in swap: {_human_bytes(swap)}",
+            f"{mem.get('pageouts', 0)} pageouts, {vive} live "
+            f"{_plurale(vive, 'session', 'sessions')}. "
+            f"close one before starting anything else."))
     elif swap > SWAP_ATTENZIONE:
         notizie.append(_notizia(
-            "swap", "media",
-            f"swap in uso: {_human_bytes(swap)}",
-            "ancora poco, ma da qui in genere sale."))
+            "swap", "medium",
+            f"swap in use: {_human_bytes(swap)}",
+            "still small, but this is usually where it starts climbing."))
 
     for r in righe:
         if r["strato"] != "pianificati" or not r.get("allarme"):
             continue
-        m = re.search(r"ULTIMA USCITA (\d+)", r.get("dettaglio", ""))
-        codice = m.group(1) if m else "diverso da zero"
+        m = re.search(r"LAST EXIT (\d+)", r.get("dettaglio", ""))
+        codice = m.group(1) if m else "non-zero"
         notizie.append(_notizia(
-            "pianificato:" + r["id"], "alta",
-            f"{r['nome']} e' uscito male",
-            f"ultima uscita {codice}. il job resta in orario e riprovera'."))
+            "scheduled:" + r["id"], "high",
+            f"{r['nome']} exited badly",
+            f"last exit {codice}. the job stays on schedule and will try again."))
 
     for r in righe:
         # Un permanente e' per definizione una cosa che dovrebbe essere su
@@ -121,17 +121,17 @@ def valuta(snap):
         # comando esiste per rompere.
         if r["strato"] == "permanenti" and r.get("allarme"):
             notizie.append(_notizia(
-                "permanente:" + r["id"], "alta",
-                f"{r['nome']} non e' in piedi",
-                f"{r.get('stato') or 'fermo'}. launchd lo dichiara ma non c'e' un processo."))
+                "persistent:" + r["id"], "high",
+                f"{r['nome']} is not up",
+                f"{r.get('stato') or 'stopped'}. launchd declares it, but there is no process."))
 
-    ordine = {"alta": 0, "media": 1}
+    ordine = {"high": 0, "medium": 1}
     return sorted(notizie, key=lambda n: ordine.get(n["gravita"], 9))
 
 
 def forti(notizie):
     """Solo quelle che valgono un'interruzione."""
-    return [n for n in notizie if n["gravita"] == "alta"]
+    return [n for n in notizie if n["gravita"] == "high"]
 
 
 def riassunto(notizie, massimo=3):
@@ -144,7 +144,7 @@ def riassunto(notizie, massimo=3):
     corpo = " ".join(n["testo"] for n in scelte)
     resto = len(notizie) - len(scelte)
     if resto > 0:
-        corpo += f" (e altre {resto} cose: `faro`)"
+        corpo += f" (and {resto} more: `faro`)"
     return _pulisci(sottotitolo), _pulisci(corpo)
 
 
@@ -217,9 +217,9 @@ def main(args):
         # Il caso normale, ed e' il motivo per cui questa notifica si guarda:
         # tace.
         if prova:
-            print("niente da dire.")
+            print("nothing to say.")
             for n in notizie:
-                print(f"  (solo pagina) {n['titolo']}: {n['testo']}")
+                print(f"  (page only) {n['titolo']}: {n['testo']}")
         return 0
 
     sottotitolo, corpo = riassunto(urgenti)
@@ -231,12 +231,12 @@ def main(args):
 
     if prova:
         cmd = scrivi_su_boa(f"{sottotitolo}. {corpo}", prova=True, chiave=chiave)
-        print("direi:")
-        print("  titolo      faro")
-        print(f"  sottotitolo {sottotitolo}")
-        print(f"  corpo       {corpo}")
-        print(f"  chiave      {chiave}")
-        print(f"  su boa      {'si' if cmd else 'no, boa non risulta installato'}")
+        print("I would say:")
+        print("  title     faro")
+        print(f"  subtitle  {sottotitolo}")
+        print(f"  body      {corpo}")
+        print(f"  key       {chiave}")
+        print(f"  on boa    {'yes' if cmd else 'no, boa does not look installed'}")
         return 0
 
     # Prima la lavagna, poi la notifica. L'ordine non e' casuale: e' boa che

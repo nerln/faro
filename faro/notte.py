@@ -113,7 +113,7 @@ def sessioni_ferme():
 def bloccati(snap):
     """I lavori fermi in coda, con quanto chiedono."""
     return [r for r in snap["righe"]
-            if r["strato"] == "rada" and r["stato"] == "in coda"]
+            if r["strato"] == "rada" and r["stato"] == "queued"]
 
 
 def piano(snap=None):
@@ -139,47 +139,47 @@ def piano(snap=None):
 def racconta(p):
     r = []
     m = p["memoria"]
-    r.append(f"memoria {_human_bytes(m['used'])} di {_human_bytes(m['total'])}"
+    r.append(f"memory {_human_bytes(m['used'])} of {_human_bytes(m['total'])}"
              f"   swap {_human_bytes(m['swap_used'])}"
-             f"   rada concede {_human_bytes(p['bilancio_ora'])}")
+             f"   rada allows {_human_bytes(p['bilancio_ora'])}")
     r.append("")
 
     if p["orfani"]:
-        r.append(f"  chiudo {len(p['orfani'])} orfani "
+        r.append(f"  closing {len(p['orfani'])} orphans "
                  f"({_human_bytes(sum(x['rss'] for x in p['orfani']))})")
         for x in p["orfani"]:
-            r.append(f"    pid {x['pid']}  {x['nome']}  da {_human_age(x['eta'])}")
+            r.append(f"    pid {x['pid']}  {x['nome']}  for {_human_age(x['eta'])}")
     else:
-        r.append("  nessun orfano.")
+        r.append("  no orphans.")
 
     if p["ferme"]:
-        r.append(f"  chiudo {len(p['ferme'])} sessioni ferme "
+        r.append(f"  closing {len(p['ferme'])} idle sessions "
                  f"({_human_bytes(sum(x['rss'] for x in p['ferme']))})")
-        r.append("    i transcript restano: si riaprono con claude --resume")
+        r.append("    the transcripts stay: reopen them with claude --resume")
     else:
-        r.append("  nessuna sessione ferma.")
+        r.append("  no idle sessions.")
 
     r.append("")
-    r.append(f"  dopo, rada concederebbe {_human_bytes(p['bilancio_dopo'])}"
-             f" invece di {_human_bytes(p['bilancio_ora'])}")
+    r.append(f"  afterwards rada would allow {_human_bytes(p['bilancio_dopo'])}"
+             f" instead of {_human_bytes(p['bilancio_ora'])}")
 
     if p["coda"]:
         r.append("")
-        r.append("  lavori fermi in coda:")
+        r.append("  jobs waiting in the queue:")
         for c in p["coda"]:
             serve = c["rss"]
-            entra = "ENTRA" if serve and serve <= p["bilancio_dopo"] else "non entra ancora"
+            entra = "FITS" if serve and serve <= p["bilancio_dopo"] else "still does not fit"
             r.append(f"    {_human_bytes(serve):>8}  {entra:<16} {c['nome'][:52]}")
-            if entra != "ENTRA" and serve:
+            if entra != "FITS" and serve:
                 manca = serve - p["bilancio_dopo"]
-                r.append(f"    {'':>8}  mancano {_human_bytes(manca)}: "
-                         f"`faro spazio {_human_bytes(serve)}` dice cosa chiudere")
+                r.append(f"    {'':>8}  {_human_bytes(manca)} short: "
+                         f"`faro space {_human_bytes(serve)}` says what to close")
     else:
         r.append("")
-        r.append("  niente in coda.")
+        r.append("  nothing queued.")
 
     r.append("")
-    r.append("  non apro niente. mai. e' l'invariante di questo comando.")
+    r.append("  it opens nothing. ever. that is this command's invariant.")
     return "\n".join(r)
 
 
@@ -190,30 +190,30 @@ def rapporto(p, chiusi_orfani, chiuse_sessioni):
     path = os.path.join(FARO_HOME, f"notte-{quando}.md")
     m = p["memoria"]
     testo = [
-        f"# La notte del {time.strftime('%d/%m/%Y alle %H:%M')}",
+        f"# The night of {time.strftime('%d/%m/%Y at %H:%M')}",
         "",
-        f"- memoria alla chiusura: {_human_bytes(m['used'])} di {_human_bytes(m['total'])}, "
+        f"- memory at close: {_human_bytes(m['used'])} of {_human_bytes(m['total'])}, "
         f"swap {_human_bytes(m['swap_used'])}",
-        f"- orfani chiusi: {chiusi_orfani}",
-        f"- sessioni ferme chiuse: {chiuse_sessioni} "
-        f"(i transcript restano, si riaprono con `claude --resume`)",
-        f"- bilancio di rada dopo la pulizia: {_human_bytes(p['bilancio_dopo'])}",
+        f"- orphans closed: {chiusi_orfani}",
+        f"- idle sessions closed: {chiuse_sessioni} "
+        f"(the transcripts stay, reopen with `claude --resume`)",
+        f"- rada budget after the cleanup: {_human_bytes(p['bilancio_dopo'])}",
         "",
     ]
     if p["coda"]:
-        testo.append("## Lavori che erano in coda")
+        testo.append("## Jobs that were queued")
         testo.append("")
         for c in p["coda"]:
-            entra = "dovrebbe essere partito" if c["rss"] <= p["bilancio_dopo"] else \
-                    "non entrava nemmeno dopo la pulizia"
+            entra = "should have started" if c["rss"] <= p["bilancio_dopo"] else \
+                    "did not fit even after the cleanup"
             testo.append(f"- {_human_bytes(c['rss'])}  {c['nome'][:60]}  ({entra})")
         testo.append("")
-    testo.append("## Cosa non e' stato fatto, di proposito")
+    testo.append("## What was deliberately not done")
     testo.append("")
-    testo.append("- non e' stata aperta nessuna sessione, e non lo sara' mai:")
-    testo.append("  aprire finestre per conto di chi dorme sposta il lavoro al risveglio.")
-    testo.append("- niente e' stato forzato in coda: se un lavoro non entrava,")
-    testo.append("  `faro spazio <quanto>` dice cosa chiudere per farlo entrare.")
+    testo.append("- no session was opened, and none ever will be:")
+    testo.append("  opening windows for someone asleep just moves the work to their waking.")
+    testo.append("- nothing was forced in the queue: if a job did not fit,")
+    testo.append("  `faro space <how much>` says what to close to make it fit.")
     with open(path, "w") as f:
         f.write("\n".join(testo) + "\n")
     return path

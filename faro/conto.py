@@ -36,12 +36,12 @@ def _finestra(ore=None, giorni=None):
     """(inizio, etichetta). Senza argomenti: da mezzanotte."""
     now = time.time()
     if ore:
-        return now - ore * 3600, f"ultime {ore} ore"
+        return now - ore * 3600, f"last {ore} hours"
     if giorni:
-        return now - giorni * 86400, f"ultimi {giorni} giorni"
+        return now - giorni * 86400, f"last {giorni} days"
     t = time.localtime(now)
     mezzanotte = time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 0, 0, 0, 0, 0, -1))
-    return mezzanotte, "da mezzanotte"
+    return mezzanotte, "since midnight"
 
 
 def _chi(path):
@@ -50,11 +50,11 @@ def _chi(path):
     parti = rel.split(os.sep)
     progetto = parti[0] if parti else "?"
     if "subagents" in parti:
-        genere = "subagenti"
+        genere = "subagents"
     elif "workflows" in parti:
-        genere = "workflow"
+        genere = "workflows"
     else:
-        genere = "sessioni"
+        genere = "sessions"
     nome = progetto.replace("-Users-eugenionerelli-", "").replace("-", " ").strip()
     return nome[:44] or "?", genere
 
@@ -132,16 +132,16 @@ def racconta(ore=None, giorni=None, root=None):
     inizio, etichetta = _finestra(ore, giorni)
     conti, file_visti = raccogli(inizio, root=root)
     if not conti:
-        return f"nessun token speso {etichetta}."
+        return f"no tokens spent {etichetta}."
 
-    righe = [f"token {etichetta}   {file_visti} transcript toccati", ""]
+    righe = [f"tokens {etichetta}   {file_visti} transcripts touched", ""]
     tot_out = sum(c["out"] for c in conti.values())
     tot_letta = sum(c["cache_letta"] for c in conti.values())
     tot_scritta = sum(c["cache_scritta"] for c in conti.values())
-    righe.append(f"  in uscita {_mille(tot_out)}   "
-                 f"cache letta {_mille(tot_letta)}   "
-                 f"cache scritta {_mille(tot_scritta)}")
-    righe.append("  quello che conta e' l'uscita: la cache letta costa una frazione.")
+    righe.append(f"  out {_mille(tot_out)}   "
+                 f"cache read {_mille(tot_letta)}   "
+                 f"cache written {_mille(tot_scritta)}")
+    righe.append("  the number that matters is out: cache reads cost a fraction.")
     righe.append("")
 
     per_genere = {}

@@ -36,15 +36,15 @@ CLAUDE_BIN = "claude.app/Contents/MacOS/claude"
 # processes that launchd does not own and whose parent is already gone, so a
 # false positive here still cannot touch a supervised service.
 SESSION_SPAWNED = [
-    (r"python[\d.]* -m http\.server", "server statico di anteprima"),
-    (r"\bvite\b", "dev server vite"),
-    (r"next (dev|start)", "dev server next"),
-    (r"(npm|pnpm|yarn) run (dev|start|preview|serve)", "dev server node"),
-    (r"\buvicorn\b|flask run", "dev server python"),
-    (r"plancia-mcp", "server MCP di plancia"),
-    (r"bridge-server\.js|agentbridge.*daemon\.js", "ponte agentbridge"),
-    (r"codex app-server", "app-server di codex"),
-    (r"mcp-server|@modelcontextprotocol", "server MCP"),
+    (r"python[\d.]* -m http\.server", "static preview server"),
+    (r"\bvite\b", "vite dev server"),
+    (r"next (dev|start)", "next dev server"),
+    (r"(npm|pnpm|yarn) run (dev|start|preview|serve)", "node dev server"),
+    (r"\buvicorn\b|flask run", "python dev server"),
+    (r"plancia-mcp", "plancia MCP server"),
+    (r"bridge-server\.js|agentbridge.*daemon\.js", "agentbridge bridge"),
+    (r"codex app-server", "codex app server"),
+    (r"mcp-server|@modelcontextprotocol", "MCP server"),
 ]
 
 # Labels under these prefixes are not his. They are listed once, counted, and
@@ -75,7 +75,7 @@ def _human_age(seconds):
         return f"{seconds // 60}m"
     if seconds < 86400:
         return f"{seconds // 3600}h{(seconds % 3600) // 60:02d}"
-    return f"{seconds // 86400}g{(seconds % 86400) // 3600:02d}h"
+    return f"{seconds // 86400}d{(seconds % 86400) // 3600:02d}h"
 
 
 def _iso_ago(iso):
@@ -84,7 +84,7 @@ def _iso_ago(iso):
         import datetime
         t = datetime.datetime.fromisoformat(iso.replace("Z", "+00:00"))
         delta = probe.now() - t.timestamp()
-        return f"{_human_age(delta)} fa" if delta >= 0 else f"tra {_human_age(-delta)}"
+        return f"{_human_age(delta)} ago" if delta >= 0 else f"in {_human_age(-delta)}"
     except Exception:
         return iso
 
@@ -117,7 +117,7 @@ def _mine(agent):
 
 def _schedule_text(agent):
     if agent.get("interval"):
-        return f"ogni {agent['interval']}s"
+        return f"every {agent['interval']}s"
     cal = agent.get("calendar")
     if cal:
         entries = cal if isinstance(cal, list) else [cal]
@@ -126,15 +126,15 @@ def _schedule_text(agent):
             h = e.get("Hour")
             m = e.get("Minute", 0)
             if h is None:
-                times.append(f"al minuto {m} di ogni ora")
+                times.append(f"at minute {m} of every hour")
             else:
                 times.append(f"{h:02d}:{m:02d}")
-        return "alle " + " e ".join(times)
+        return "at " + " and ".join(times)
     if agent.get("keep_alive"):
-        return "sempre"
+        return "always"
     if agent.get("run_at_load"):
-        return "all'avvio"
-    return "a richiesta"
+        return "at load"
+    return "on demand"
 
 
 # --------------------------------------------------------------- the layers
@@ -156,11 +156,11 @@ def permanenti(procs, loaded, agents, ports):
         pid = info.get("pid")
         proc = procs.get(pid) if pid else None
         alive = proc is not None
-        stato = "attivo" if alive else ("caricato ma fermo" if a["label"] in loaded else "non caricato")
+        stato = "up" if alive else ("loaded but not running" if a["label"] in loaded else "not loaded")
         porte = ports.get(pid, []) if pid else []
         detail = " ".join(a["program"])[:110]
         if porte:
-            detail = f"porta {', '.join(str(p) for p in porte)}  ·  " + detail
+            detail = f"port {', '.join(str(p) for p in porte)}  ·  " + detail
         last = probe.log_tail(a.get("stdout"), 1)
         out.append(_record(
             "permanenti", a["label"], a["label"],
@@ -223,17 +223,17 @@ def pianificati(procs, loaded, agents):
         d = probe.launchd_detail(a["label"]) if a["label"] in loaded else {}
         bits = []
         if d.get("runs") is not None:
-            bits.append(f"{d['runs']} esecuzioni dal caricamento")
+            bits.append(f"{d['runs']} runs since load")
         exit_code = d.get("last_exit", status)
         if exit_code:
-            bits.append(f"ULTIMA USCITA {exit_code}")
+            bits.append(f"LAST EXIT {exit_code}")
         elif exit_code == 0 and d:
-            bits.append("ultima uscita 0")
+            bits.append("last exit 0")
         prefix = ("  ·  ".join(bits) + "  ·  ") if bits else ""
 
         out.append(_record(
             "pianificati", a["label"], a["label"],
-            stato="in orario" if a["label"] in loaded else "non caricato",
+            stato="on schedule" if a["label"] in loaded else "not loaded",
             quando=quando,
             dove=a["path"],
             dettaglio=prefix + detail,
@@ -278,18 +278,18 @@ def pianificati_claude(root=None, cache_path=None):
             fm = _frontmatter(skill)
             c = cache.get(name, {})
             enabled = c.get("enabled")
-            quando = c.get("schedule") or "(orario noto solo all'app)"
-            stato = "attivo" if enabled else ("disattivato" if enabled is False else "orario ignoto")
+            quando = c.get("schedule") or "(schedule known only to the app)"
+            stato = "enabled" if enabled else ("disabled" if enabled is False else "schedule unknown")
             prefix = ""
             if c.get("lastRunAt"):
-                prefix = f"ultima {_iso_ago(c['lastRunAt'])}  ·  "
+                prefix = f"last {_iso_ago(c['lastRunAt'])}  ·  "
             out.append(_record(
                 "pianificati", f"task:{name}", name,
                 stato=stato,
-                quando=quando if enabled is not False else "disattivato",
+                quando=quando if enabled is not False else "disabled",
                 dove=skill,
                 dettaglio=prefix + (fm.get("description") or "")[:110],
-                azione="disattivalo dall'app, oppure sposta la cartella",
+                azione="disable it in the app, or move the folder",
                 allarme=False,
             ))
             if c.get("lastRunAt"):
@@ -316,12 +316,12 @@ def _chi_aspetta(pid, procs):
     wrapper vivo e la sessione morta, e da nessuna parte si poteva saperlo.
     """
     if not pid:
-        return "senza processo che aspetta", True
+        return "no process is waiting for it", True
     p = (procs or {}).get(pid)
     if p is None:
-        return "fantasma: chi aspettava non c'e' piu'", True
+        return "ghost: whoever was waiting is gone", True
     if p["ppid"] == 1:
-        return "la sessione che lo ha chiesto e' morta, il lavoro no", True
+        return "the session that asked is dead, the job is not", True
     return "", False
 
 
@@ -335,19 +335,19 @@ def rada(procs=None):
         with open(state_path) as f:
             d = json.load(f)
     except Exception:
-        return [_record("rada", "rada:stato", "coda rada",
-                        stato="illeggibile", dettaglio=state_path, allarme=True)]
+        return [_record("rada", "rada:stato", "rada queue",
+                        stato="unreadable", dettaglio=state_path, allarme=True)]
 
     now = probe.now()
     for tid, ls in sorted((d.get("leases") or {}).items(),
                           key=lambda kv: kv[1].get("start", 0)):
         out.append(_record(
             "rada", f"rada:{tid}", ls.get("show", "")[:70] or tid,
-            stato="in esecuzione",
+            stato="running",
             eta=now - ls.get("start", now),
             rss=ls.get("peak") or ls.get("need") or 0,
             dove=ls.get("project", "?"),
-            dettaglio=f"permesso {tid}",
+            dettaglio=f"lease {tid}",
             azione=f"rada status",
         ))
     order = list((d.get("judge") or {}).get("order") or [])
@@ -358,14 +358,14 @@ def rada(procs=None):
             continue
         age = now - tk.get("enq", now)
         nota, sospetto = _chi_aspetta(tk.get("pid"), procs)
-        dettaglio = f"biglietto {tid}"
+        dettaglio = f"ticket {tid}"
         if nota:
             dettaglio = f"{nota}  ·  " + dettaglio
         if tk.get("intent"):
             dettaglio += "  ·  " + str(tk["intent"])[:60]
         out.append(_record(
             "rada", f"rada:{tid}", tk.get("show", "")[:70] or tid,
-            stato="in coda",
+            stato="queued",
             eta=age,
             rss=tk.get("need") or 0,
             dove=tk.get("project", "?"),
@@ -381,11 +381,11 @@ def rada(procs=None):
         if stale:
             oldest = min(probe.mtime(os.path.join(pending, f)) or now for f in stale)
             out.append(_record(
-                "rada", "rada:pending", f"{len(stale)} comandi in sospeso mai ritirati",
-                stato="residuo",
+                "rada", "rada:pending", f"{len(stale)} pending commands nobody collected",
+                stato="left over",
                 eta=now - oldest,
                 dove=pending,
-                dettaglio="file .cmd scritti dal gate e non consumati",
+                dettaglio=".cmd files written by the gate and never used",
                 azione="rada reset",
                 allarme=(now - oldest) > 86400,
             ))
@@ -439,12 +439,12 @@ def sessioni(procs, cwd_map, ports, seen):
         seen.add(s["pid"])
         out.append(_record(
             "sessioni", f"pid:{s['pid']}", f"{name} #{s['pid']}",
-            stato="viva",
+            stato="alive",
             pid=s["pid"],
             rss=total,
             eta=s["age"],
             dove=cwd,
-            dettaglio=f"{len(kids)} figli, {_human_bytes(total)} in tutto  ·  {cwd}",
+            dettaglio=f"{len(kids)} children, {_human_bytes(total)} in all  ·  {cwd}",
             azione=f"faro stop {s['pid']}",
             allarme=(s["age"] or 0) > 12 * 3600,
         ))
@@ -456,13 +456,13 @@ def sessioni(procs, cwd_map, ports, seen):
             porte = ports.get(k["pid"], [])
             out.append(_record(
                 "servizi", f"pid:{k['pid']}",
-                "comando shell in corso" if is_shell else _describe(k["command"]),
-                stato="in servizio",
+                "shell command still running" if is_shell else _describe(k["command"]),
+                stato="in service",
                 pid=k["pid"],
                 rss=k["rss"],
                 eta=k["age"],
-                dove=f"figlio di {s['pid']}",
-                dettaglio=(f"porta {', '.join(str(p) for p in porte)}  ·  " if porte else "")
+                dove=f"child of {s['pid']}",
+                dettaglio=(f"port {', '.join(str(p) for p in porte)}  ·  " if porte else "")
                           + k["command"][:90],
                 azione=f"faro stop {k['pid']}",
                 # A shell a session started and never collected is how a
@@ -500,13 +500,13 @@ def sparsi(procs, loaded, ports, seen):
         porte = ports.get(p["pid"], [])
         out.append(_record(
             "servizi", f"pid:{p['pid']}", label,
-            stato="in servizio",
+            stato="in service",
             pid=p["pid"],
             rss=p["rss"],
             eta=p["age"],
-            dove=f"figlio di {p['ppid']}",
-            dettaglio=(f"porta {', '.join(str(x) for x in porte)}  ·  " if porte else "")
-                      + f"sotto {_describe(parent.get('command', '?'))}  ·  "
+            dove=f"child of {p['ppid']}",
+            dettaglio=(f"port {', '.join(str(x) for x in porte)}  ·  " if porte else "")
+                      + f"under {_describe(parent.get('command', '?'))}  ·  "
                       + p["command"][:70],
             azione=f"faro stop {p['pid']}",
         ))
@@ -607,15 +607,15 @@ def orfani(procs, loaded, cwd_map, ports, cartelle_vive=()):
                      for c in cartelle_vive if c and c != "?")
         if viva or giovane or in_uso:
             porte = ports.get(p["pid"], [])
-            motivo = ("una sessione viva lavora in questa cartella" if in_uso
-                      else "la sessione sta ancora scrivendo" if viva
-                      else f"avviato da {_human_age(p['age'])}, troppo presto per dirlo")
+            motivo = ("a live session is working in this folder" if in_uso
+                      else "its session is still writing" if viva
+                      else f"started {_human_age(p['age'])} ago, too soon to tell")
             out_servizio = _record(
-                "servizi", f"pid:{p['pid']}", label or "processo di sessione",
-                stato="in servizio",
+                "servizi", f"pid:{p['pid']}", label or "session process",
+                stato="in service",
                 pid=p["pid"], rss=p["rss"], eta=p["age"],
                 dove=cwd or "?",
-                dettaglio=(f"porta {', '.join(str(x) for x in porte)}  ·  " if porte else "")
+                dettaglio=(f"port {', '.join(str(x) for x in porte)}  ·  " if porte else "")
                           + motivo,
                 azione=f"faro stop {p['pid']}",
             )
@@ -628,13 +628,13 @@ def orfani(procs, loaded, cwd_map, ports, cartelle_vive=()):
         if m:
             session = m.group(1)
         out.append(_record(
-            "orfani", f"pid:{p['pid']}", label or "processo di sessione",
-            stato="orfano",
+            "orfani", f"pid:{p['pid']}", label or "session process",
+            stato="orphan",
             pid=p["pid"],
             rss=p["rss"],
             eta=p["age"],
             dove=cwd or "?",
-            dettaglio=(f"porta {', '.join(str(x) for x in porte)}  ·  " if porte else "")
+            dettaglio=(f"port {', '.join(str(x) for x in porte)}  ·  " if porte else "")
                       + p["command"][:90],
             azione=f"faro reap --esegui",
             allarme=True,

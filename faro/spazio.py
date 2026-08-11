@@ -44,34 +44,34 @@ RESA = 0.7
 GRUPPI = [
     # (regex sul comando, nome, categoria, cosa si perde)
     (r"^/System/|^/usr/libexec|^/usr/sbin|kernel_task|WindowServer|loginwindow",
-     "sistema", "intoccabile", "il sistema operativo"),
-    (r"claude-code/[\d.]+/claude\.app", "sessioni di Claude Code", "recuperabile",
-     "niente: i transcript restano e si riprendono con claude --resume"),
-    (r"^/Applications/Claude\.app", "app Claude desktop", "caro",
-     "chiude tutte le sessioni di Claude Code, compresa quella da cui stai leggendo"),
-    (r"Google Chrome|Chromium", "Chrome", "poco",
-     "le schede, che Chrome riapre da solo al riavvio"),
-    (r"^/Applications/Safari|SafariServices", "Safari", "poco",
-     "le schede, che Safari riapre da solo"),
-    (r"Visual Studio Code|Code Helper", "VS Code", "caro",
-     "il lavoro non salvato negli editor aperti"),
-    (r"Docker|com\.docker", "Docker", "poco", "i contenitori in esecuzione"),
-    (r"AppleSpell", "correttore ortografico", "recuperabile",
-     "niente: il sistema lo riavvia da solo quando serve"),
-    (r"AdGuard", "AdGuard", "poco", "il blocco della pubblicita' finche' non riparte"),
-    (r"agentbridge|codex", "codex e il ponte", "recuperabile",
-     "il collegamento con Codex, che si rifa'"),
-    (r"plancia", "plancia", "caro", "il centro di controllo e la sua dashboard"),
+     "the system", "untouchable", "the operating system"),
+    (r"claude-code/[\d.]+/claude\.app", "Claude Code sessions", "recoverable",
+     "nothing: the transcripts stay, and resume with claude --resume"),
+    (r"^/Applications/Claude\.app", "Claude desktop app", "costly",
+     "closes every Claude Code session, including the one you are reading this in"),
+    (r"Google Chrome|Chromium", "Chrome", "cheap",
+     "the tabs, which Chrome reopens by itself on restart"),
+    (r"^/Applications/Safari|SafariServices", "Safari", "cheap",
+     "the tabs, which Safari reopens by itself"),
+    (r"Visual Studio Code|Code Helper", "VS Code", "costly",
+     "unsaved work in the open editors"),
+    (r"Docker|com\.docker", "Docker", "cheap", "the running containers"),
+    (r"AppleSpell", "spell checker", "recoverable",
+     "nothing: the system restarts it when it needs it"),
+    (r"AdGuard", "AdGuard", "cheap", "ad blocking until it starts again"),
+    (r"agentbridge|codex", "codex and the bridge", "recoverable",
+     "the link to Codex, which is rebuilt"),
+    (r"plancia", "plancia", "costly", "the control centre and its dashboard"),
 ]
 
-ORDINE = {"recuperabile": 0, "poco": 1, "caro": 2, "intoccabile": 9}
+ORDINE = {"recoverable": 0, "cheap": 1, "costly": 2, "untouchable": 9}
 
 
 def _gruppo(comando):
     for rx, nome, categoria, perdita in GRUPPI:
         if re.search(rx, comando):
             return nome, categoria, perdita
-    return "altro", "poco", "quello che stava facendo"
+    return "other", "cheap", "whatever it was doing"
 
 
 def raggruppa(procs):
@@ -110,7 +110,7 @@ def piano(serve, mem, procs):
     # byte di usata che sparisce.
     scelti, liberato = [], 0
     for g in gruppi:
-        if g["categoria"] == "intoccabile":
+        if g["categoria"] == "untouchable":
             continue
         if liberato >= manca:
             break
@@ -130,28 +130,28 @@ def racconta(serve, mem=None, procs=None):
     righe = []
 
     righe.append(
-        f"serve {_human_bytes(serve)}   rada adesso ne concede {_human_bytes(ora)}"
-        f"   memoria usata {_human_bytes(mem['used'])} di {_human_bytes(mem['total'])}")
+        f"needs {_human_bytes(serve)}   rada allows {_human_bytes(ora)} right now"
+        f"   memory used {_human_bytes(mem['used'])} of {_human_bytes(mem['total'])}")
     if mem["swap_used"]:
-        righe.append(f"   swap gia' in uso: {_human_bytes(mem['swap_used'])}")
+        righe.append(f"   swap already in use: {_human_bytes(mem['swap_used'])}")
     righe.append("")
 
     if ora >= serve:
-        righe.append("  entra cosi' com'e'. non devi chiudere niente.")
+        righe.append("  it fits as it is. you do not have to close anything.")
         return "\n".join(righe)
 
     scelti, raggiunto, liberato = piano(serve, mem, procs)
-    righe.append("  chiudendo, in quest'ordine:")
+    righe.append("  closing, in this order:")
     for g in scelti:
         righe.append(f"    {_human_bytes(g['rss']):>9}  {g['nome']:<28} "
-                     f"({g['processi']} processi)")
-        righe.append(f"    {'':>9}  perdi: {g['perdita']}")
+                     f"({g['processi']} processes)")
+        righe.append(f"    {'':>9}  you lose: {g['perdita']}")
     righe.append("")
-    righe.append(f"  stima di quanto tornerebbe al bilancio: {_human_bytes(liberato)}"
-                 f"  ({int(RESA * 100)}% dell'RSS, prudente)")
+    righe.append(f"  estimate of what would come back to the budget: {_human_bytes(liberato)}"
+                 f"  ({int(RESA * 100)}% of RSS, deliberately low)")
 
     if raggiunto:
-        righe.append("  con questo il lavoro entra.")
+        righe.append("  with that, the job fits.")
     else:
         righe.append(ATTENZIONE_NON_ENTRA.format(
             serve=_human_bytes(serve),
@@ -159,12 +159,12 @@ def racconta(serve, mem=None, procs=None):
     return "\n".join(righe)
 
 
-ATTENZIONE_NON_ENTRA = """  NON BASTA. Anche chiudendo tutto quello che si puo' chiudere restano
-  {manca} da trovare, e quello che resta e' il sistema operativo.
+ATTENZIONE_NON_ENTRA = """  NOT ENOUGH. Even closing everything that can be closed leaves
+  {manca} to find, and what is left is the operating system.
 
-  Un lavoro da {serve} su questa macchina vuole la macchina quasi vuota. Non e'
-  un difetto di rada: e' rada che te lo sta dicendo. Le strade vere sono tre, e
-  nessuna e' "forzalo e speriamo":
-    - chiudere tutto e lanciarlo da solo, con `rada force` a macchina ferma;
-    - farlo chiedere meno, se la richiesta era una stima e non una misura;
-    - portarlo su una macchina piu' grande."""
+  A {serve} job on this machine wants the machine nearly empty. That is not a
+  defect in rada: that is rada telling you. There are three real roads, and
+  none of them is "force it and hope":
+    - close everything and run it alone, with `rada force` on a quiet machine;
+    - make it ask for less, if the figure was an estimate and not a measurement;
+    - move it to a bigger machine."""
