@@ -392,13 +392,31 @@ def rada(procs=None):
     return out
 
 
+def _e_claude(command):
+    """Questo processo e' una sessione di Claude Code?
+
+    Non basta cercare il percorso dentro il bundle dell'applicazione. Una
+    sessione avviata da un terminale gira come `/Users/x/.local/bin/claude`, e
+    in `ps` compare come `claude --resume <id>` e basta.
+
+    Difetto misurato la notte dell'11/08/2026, nel modo peggiore: dopo aver
+    riaperto sette sessioni da iTerm2, faro continuava a dire "2 sessioni
+    vive". Uno strumento nato per far vedere tutto quello che gira non puo'
+    vedere solo quello che ha avviato l'applicazione.
+    """
+    if CLAUDE_BIN in command:
+        return True
+    pezzi = command.split()
+    return bool(pezzi) and os.path.basename(pezzi[0]) == "claude"
+
+
 def _live_sessions(procs):
     """Leaf claude processes: one per live session.
 
     The app starts a wrapper that starts claude, and both match the same path,
     so the one that matters is the claude with no claude child.
     """
-    claudes = {p["pid"]: p for p in procs.values() if CLAUDE_BIN in p["command"]}
+    claudes = {p["pid"]: p for p in procs.values() if _e_claude(p["command"])}
     parents = {p["ppid"] for p in claudes.values()}
     return [p for pid, p in claudes.items() if pid not in parents]
 
@@ -638,7 +656,7 @@ def snapshot():
     ports = probe.listening_ports()
 
     interesting = [p["pid"] for p in procs.values()
-                   if p["ppid"] == 1 or CLAUDE_BIN in p["command"]]
+                   if p["ppid"] == 1 or _e_claude(p["command"])]
     interesting += [i["pid"] for i in loaded.values() if i.get("pid")]
     cwd_map = probe.cwds(sorted(set(interesting)))
 

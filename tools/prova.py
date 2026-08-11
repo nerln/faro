@@ -729,5 +729,35 @@ class Conto(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             self.assertIn("nessun token", conto.racconta(root=d))
 
+
+class SessioniDaTerminale(unittest.TestCase):
+    """Una sessione avviata da un terminale non gira dentro il bundle dell'app.
+
+    Difetto misurato la notte dell'11/08/2026 nel modo peggiore: dopo aver
+    riaperto sette sessioni da iTerm2, faro continuava a dire "2 sessioni vive".
+    """
+
+    def test_una_sessione_da_terminale_viene_riconosciuta(self):
+        self.assertTrue(inventory._e_claude("claude --resume 5d59fc7c-2af7"))
+        self.assertTrue(inventory._e_claude("/Users/e/.local/bin/claude"))
+
+    def test_quella_dentro_il_bundle_pure(self):
+        self.assertTrue(inventory._e_claude(f"/x/{inventory.CLAUDE_BIN} --output-format"))
+
+    def test_un_percorso_che_contiene_claude_non_basta(self):
+        """Altrimenti mezza cartella ~/.claude diventerebbe una sessione."""
+        self.assertFalse(inventory._e_claude(
+            "python3 /Users/e/.claude/plugins/qualcosa/server.py"))
+        self.assertFalse(inventory._e_claude("bun run /Users/e/.claude/x/bridge.js"))
+        self.assertFalse(inventory._e_claude(""))
+
+    def test_le_sessioni_da_terminale_entrano_nel_conto(self):
+        procs = {
+            11: proc(11, 10, "claude --resume aaa"),
+            12: proc(12, 10, f"/x/{inventory.CLAUDE_BIN} --x"),
+        }
+        vive = inventory._live_sessions(procs)
+        self.assertEqual(sorted(p["pid"] for p in vive), [11, 12])
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
