@@ -19,6 +19,25 @@ di swap su 5.
 
 Se una modifica ne rompe una, la modifica è sbagliata, non l'invariante.
 
+0. **faro non apre mai niente.** Non una sessione, non una finestra, non un
+   terminale, non un server. Chiude, conta, dice. Questa viene prima di tutte le
+   altre perché è quella che è stata rotta.
+
+   Pagata la notte dell'11/08/2026. Eugenio è andato a dormire chiedendo di
+   riprendere le sessioni che rada aveva rallentato, e sono state riaperte sette
+   sessioni in sette finestre di iTerm2 alle tre di notte. Letteralmente quello
+   che aveva chiesto. Al risveglio si è trovato sette terminali che non sapeva
+   distinguere, sessioni che avevano compattato il contesto e quindi non erano
+   più dove le aveva lasciate, e mezz'ora di lavoro per capire cosa fosse
+   successo.
+
+   Il difetto non era in nessun comando: era che non esisteva un modo di dire
+   "vado a letto", e quindi l'unica forma che poteva prendere quella richiesta
+   era che qualcuno agisse al posto suo. Adesso quel modo è `faro notte`, e
+   toglie invece di aggiungere. Se un giorno sembrerà utile che faro apra
+   qualcosa, la risposta è no: aprire per conto di chi dorme sposta il lavoro al
+   risveglio, non lo toglie.
+
 1. **faro non tiene un demone.** Mai. Il momento in cui faro diventa un processo che
    gira sempre è il momento in cui diventa parte del problema che risolve. Se serve una
    vista continua è `faro vivo`, in primo piano, e muore con il terminale.

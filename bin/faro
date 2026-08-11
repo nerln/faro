@@ -13,9 +13,12 @@
   faro annuncia        se c'e' qualcosa da sapere lo dice, se no tace
   faro spazio 5G       cosa chiudere perche' un lavoro da 5G entri
   faro token           dove sono andati i token, e chi li ha spesi
+  faro notte           vado a letto: pulisce, sblocca la coda, non apre niente
+  faro mattina         cosa e' successo mentre dormivi
 """
 
 import argparse
+from argparse import Namespace
 import json
 import os
 import re
@@ -27,7 +30,8 @@ import time
 # ~/.local/bin, and abspath would resolve the package next to the link.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
-from faro import __version__, board, conto, inventory, probe, spazio  # noqa: E402
+from faro import (__version__, board, conto, inventory, notte, probe,  # noqa: E402
+                  spazio)
 
 UID = os.getuid()
 
@@ -86,6 +90,58 @@ def cmd_spazio(args):
 def cmd_token(args):
     """Dove sono andati i token. Legge soltanto."""
     print(conto.racconta(ore=args.ore, giorni=args.giorni))
+    return 0
+
+
+def cmd_notte(args):
+    """Vado a letto. Toglie, sblocca, scrive. Non apre mai niente."""
+    p = notte.piano()
+    print(notte.racconta(p))
+    if not args.esegui:
+        print("\n  prova soltanto. aggiungi --esegui per farlo davvero.")
+        return 0
+
+    print()
+    chiusi = 0
+    if p["orfani"]:
+        rc_args = Namespace(esegui=True, piu_vecchi_di=0)
+        cmd_reap(rc_args)
+        chiusi = len(p["orfani"])
+
+    chiuse = 0
+    mie = notte._catena_mia(probe.processes())
+    for s_ in p["ferme"]:
+        if s_["pid"] in mie:
+            continue
+        try:
+            os.kill(s_["pid"], signal.SIGTERM)
+            chiuse += 1
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            print(f"  pid {s_['pid']}: permesso negato")
+    if chiuse:
+        print(f"  chiuse {chiuse} sessioni ferme.")
+
+    time.sleep(3)
+    dopo = notte.piano()
+    path = notte.rapporto(dopo, chiusi, chiuse)
+    print(f"\n  rada adesso concede {inventory._human_bytes(dopo['bilancio_ora'])}.")
+    print(f"  rapporto in {path}")
+    print("  al risveglio: faro mattina")
+    return 0
+
+
+def cmd_mattina(args):
+    """Cosa e' successo mentre dormivi."""
+    path = notte.ultimo_rapporto()
+    if not path:
+        print("nessun rapporto: `faro notte --esegui` ne scrive uno.")
+        return 0
+    with open(path) as f:
+        print(f.read())
+    snap = inventory.snapshot()
+    print(board.render(snap, only=["rada", "orfani"]))
     return 0
 
 
@@ -310,6 +366,13 @@ def main(argv=None):
     s.add_argument("--ore", type=int, metavar="N")
     s.add_argument("--giorni", type=int, metavar="N")
     s.set_defaults(func=cmd_token)
+
+    s = sub.add_parser("notte", help="vado a letto: pulisce e sblocca, non apre niente")
+    s.add_argument("--esegui", action="store_true")
+    s.set_defaults(func=cmd_notte)
+
+    s = sub.add_parser("mattina", help="cosa e' successo mentre dormivi")
+    s.set_defaults(func=cmd_mattina)
 
     s = sub.add_parser("json", help="tutto in json")
     s.set_defaults(func=cmd_json)

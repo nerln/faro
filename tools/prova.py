@@ -759,5 +759,78 @@ class SessioniDaTerminale(unittest.TestCase):
         vive = inventory._live_sessions(procs)
         self.assertEqual(sorted(p["pid"] for p in vive), [11, 12])
 
+
+class Notte(unittest.TestCase):
+    """`faro notte`: la funzione del vado a letto.
+
+    L'invariante 0 e' che non apre mai niente, ed e' l'unica invariante nata
+    da un errore vero invece che da una previsione.
+    """
+
+    def piano(self, usata_gb=12, orfani=(), ferme=(), coda=()):
+        from faro import notte, spazio
+        g = 1024 ** 3
+        mem = {"total": 16 * g, "used": int(usata_gb * g), "free": 0,
+               "compressed": 0, "swap_total": 0, "swap_used": 0, "pageouts": 0}
+        libera = sum(o["rss"] for o in orfani) + sum(f["rss"] for f in ferme)
+        dopo = max(0, mem["used"] - int(libera * spazio.RESA))
+        return {"orfani": list(orfani), "ferme": list(ferme), "coda": list(coda),
+                "memoria": mem, "libera": libera,
+                "bilancio_ora": spazio.bilancio(mem),
+                "bilancio_dopo": spazio.bilancio(mem, usata=dopo)}
+
+    def test_dice_sempre_che_non_apre_niente(self):
+        """La riga deve esserci anche quando non c'e' niente da fare."""
+        from faro import notte
+        testo = notte.racconta(self.piano())
+        self.assertIn("non apro niente", testo)
+
+    def test_chiudere_alza_il_bilancio_di_rada(self):
+        from faro import notte
+        g = 1024 ** 3
+        p = self.piano(ferme=[{"pid": 1, "rss": 2 * g}])
+        self.assertGreater(p["bilancio_dopo"], p["bilancio_ora"])
+
+    def test_dice_se_un_lavoro_in_coda_entrerebbe_dopo(self):
+        from faro import notte
+        g = 1024 ** 3
+        coda = [{"strato": "rada", "stato": "in coda", "nome": "un lavoro",
+                 "rss": 1 * g, "eta": 100, "pid": None, "quando": "", "dove": "",
+                 "dettaglio": "", "azione": None, "allarme": True}]
+        p = self.piano(usata_gb=11, ferme=[{"pid": 1, "rss": 2 * g}], coda=coda)
+        self.assertIn("ENTRA", notte.racconta(p))
+
+    def test_e_dice_quanto_manca_quando_non_entra(self):
+        from faro import notte
+        g = 1024 ** 3
+        coda = [{"strato": "rada", "stato": "in coda", "nome": "un lavoro grosso",
+                 "rss": 9 * g, "eta": 100, "pid": None, "quando": "", "dove": "",
+                 "dettaglio": "", "azione": None, "allarme": True}]
+        testo = notte.racconta(self.piano(coda=coda))
+        self.assertIn("mancano", testo)
+        self.assertIn("faro spazio", testo)
+
+    def test_il_rapporto_scrive_che_non_ha_aperto_niente(self):
+        from faro import notte
+        import tempfile
+        vecchia = notte.FARO_HOME
+        with tempfile.TemporaryDirectory() as d:
+            notte.FARO_HOME = d
+            try:
+                path = notte.rapporto(self.piano(), 0, 0)
+                testo = open(path).read()
+                self.assertIn("non e' stata aperta nessuna sessione", testo)
+                self.assertIn("claude --resume", testo)
+            finally:
+                notte.FARO_HOME = vecchia
+
+    def test_la_sessione_che_lancia_il_comando_non_e_mai_fra_le_ferme(self):
+        from faro import notte
+        procs = probe.processes()
+        mia = notte._catena_mia(procs)
+        self.assertIn(os.getpid(), mia)
+        ferme = {s["pid"] for s in notte.sessioni_ferme()}
+        self.assertEqual(ferme & mia, set())
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
