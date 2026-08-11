@@ -528,7 +528,10 @@ class PaginaSola(unittest.TestCase):
 
 def _snap(righe=(), **memoria):
     base = {"total": 16 * 1024 ** 3, "free": 8 * 1024 ** 3, "used": 8 * 1024 ** 3,
-            "compressed": 0, "swap_total": 5 * 1024 ** 3, "swap_used": 0, "pageouts": 0}
+            "compressed": 0, "swap_total": 5 * 1024 ** 3, "swap_used": 0, "pageouts": 0,
+            # 1 e' normale: il caso di gran lunga piu' comune, e quello in cui
+            # lo swap allocato non vuol dire che la macchina stia soffrendo.
+            "pressione": 1, "libero_pct": 70}
     base.update(memoria)
     return {"ts": 0, "memoria": base, "righe": list(righe)}
 
@@ -554,9 +557,19 @@ class Annuncio(unittest.TestCase):
         self.assertIn("1 orphaned process", notizie[0]["titolo"])
         self.assertIn("11.0MB", notizie[0]["testo"])
 
-    def test_lo_swap_sopra_i_due_giga_vale_una_notifica_sotto_no(self):
-        alto = annuncio.valuta(_snap(swap_used=3 * 1024 ** 3))
-        self.assertEqual([n["gravita"] for n in alto], ["high"])
+    def test_lo_swap_sopra_i_due_giga_vale_una_notifica_solo_sotto_pressione(self):
+        """Il test diceva 'swap alto uguale allarme', e dall'11/08/2026 non e'
+        piu' vero: macOS tiene i file di swap allocati per ore dopo che la
+        pressione e' tornata normale, e notificare quel numero e' come suonare
+        un allarme antincendio davanti alla cenere. Serve anche il kernel che
+        dichiara di stare faticando."""
+        calmo = annuncio.valuta(_snap(swap_used=3 * 1024 ** 3, pressione=1))
+        self.assertEqual([n["gravita"] for n in calmo], ["medium"])
+        self.assertEqual(annuncio.forti(calmo), [])
+
+        sotto_sforzo = annuncio.valuta(_snap(swap_used=3 * 1024 ** 3, pressione=4))
+        self.assertEqual([n["gravita"] for n in sotto_sforzo], ["high"])
+
         basso = annuncio.valuta(_snap(swap_used=700 * 1024 ** 2))
         self.assertEqual([n["gravita"] for n in basso], ["medium"])
         self.assertEqual(annuncio.forti(basso), [])
