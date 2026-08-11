@@ -674,5 +674,60 @@ class BigliettiFermi(unittest.TestCase):
         self.assertEqual(nota, "")
         self.assertFalse(sospetto)
 
+
+class Conto(unittest.TestCase):
+    """`faro token`: dove sono andati i token."""
+
+    def scrivi(self, d, righe):
+        import json
+        prog = os.path.join(d, "-Users-prova")
+        os.makedirs(prog, exist_ok=True)
+        p = os.path.join(prog, "sess.jsonl")
+        with open(p, "w") as f:
+            for r in righe:
+                f.write(json.dumps(r) + "\n")
+        return p
+
+    def uso(self, ident, out):
+        return {"type": "assistant", "uuid": ident,
+                "message": {"id": ident, "model": "claude-opus-5",
+                            "usage": {"output_tokens": out, "input_tokens": 2,
+                                      "cache_read_input_tokens": 100,
+                                      "cache_creation_input_tokens": 10}}}
+
+    def test_le_voci_doppie_non_raddoppiano_il_conto(self):
+        """Lo stesso usage compare piu' volte nel transcript. Verificato su un
+        transcript vero l'11/08/2026: due righe identiche di seguito."""
+        from faro import conto
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            self.scrivi(d, [self.uso("a", 100), self.uso("a", 100), self.uso("b", 50)])
+            conti, _ = conto.raccogli(0, root=d)
+            tot = sum(c["out"] for c in conti.values())
+            self.assertEqual(tot, 150)
+
+    def test_i_file_fuori_finestra_non_si_aprono_nemmeno(self):
+        from faro import conto
+        import tempfile, time
+        with tempfile.TemporaryDirectory() as d:
+            p = self.scrivi(d, [self.uso("a", 100)])
+            os.utime(p, (0, 0))
+            conti, visti = conto.raccogli(time.time() - 60, root=d)
+            self.assertEqual(visti, 0)
+            self.assertEqual(conti, {})
+
+    def test_i_subagenti_si_contano_a_parte(self):
+        from faro import conto
+        p = os.path.join(conto.PROGETTI, "-x", "subagents", "agent-1.jsonl")
+        self.assertEqual(conto._chi(p)[1], "subagenti")
+        self.assertEqual(conto._chi(os.path.join(conto.PROGETTI, "-x", "s.jsonl"))[1],
+                         "sessioni")
+
+    def test_una_finestra_vuota_lo_dice(self):
+        from faro import conto
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIn("nessun token", conto.racconta(root=d))
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

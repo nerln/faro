@@ -12,6 +12,7 @@
   faro gui             la stessa plancia nel browser, in primo piano
   faro annuncia        se c'e' qualcosa da sapere lo dice, se no tace
   faro spazio 5G       cosa chiudere perche' un lavoro da 5G entri
+  faro token           dove sono andati i token, e chi li ha spesi
 """
 
 import argparse
@@ -26,7 +27,7 @@ import time
 # ~/.local/bin, and abspath would resolve the package next to the link.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
-from faro import __version__, board, inventory, probe, spazio  # noqa: E402
+from faro import __version__, board, conto, inventory, probe, spazio  # noqa: E402
 
 UID = os.getuid()
 
@@ -79,6 +80,12 @@ def cmd_spazio(args):
     mult = {"": 1, "K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4}
     serve = int(float(m.group(1)) * mult[m.group(2)])
     print(spazio.racconta(serve))
+    return 0
+
+
+def cmd_token(args):
+    """Dove sono andati i token. Legge soltanto."""
+    print(conto.racconta(ore=args.ore, giorni=args.giorni))
     return 0
 
 
@@ -298,6 +305,11 @@ def main(argv=None):
     s = sub.add_parser("spazio", help="cosa chiudere perche' un lavoro entri")
     s.add_argument("quanto", metavar="QUANTO", help="per esempio 5G")
     s.set_defaults(func=cmd_spazio)
+
+    s = sub.add_parser("token", help="dove sono andati i token, e chi li ha spesi")
+    s.add_argument("--ore", type=int, metavar="N")
+    s.add_argument("--giorni", type=int, metavar="N")
+    s.set_defaults(func=cmd_token)
 
     s = sub.add_parser("json", help="tutto in json")
     s.set_defaults(func=cmd_json)
