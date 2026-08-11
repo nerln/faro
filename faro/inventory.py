@@ -299,7 +299,33 @@ def pianificati_claude(root=None, cache_path=None):
     return out
 
 
-def rada():
+def _chi_aspetta(pid, procs):
+    """Chi sta aspettando un biglietto: nessuno, un orfano, o una sessione viva.
+
+    Un biglietto in coda ha il pid del processo `rada run` che aspetta. Tre
+    casi, e sono tre notizie diverse:
+
+    - il processo non c'e' piu': il biglietto e' un fantasma, tiene un posto in
+      coda per un lavoro che nessuno avviera' mai;
+    - il processo c'e' ma il suo genitore e' morto: il lavoro partira' davvero
+      quando ci sara' posto, ma la sessione che lo aveva chiesto non c'e' piu'
+      e nessuno leggera' il risultato finche' non la si riapre;
+    - il processo c'e' e ha un genitore vivo: qualcuno sta aspettando adesso.
+
+    Misurato l'11/08/2026: il job MATS e8103a9f aspettava da tre ore con il
+    wrapper vivo e la sessione morta, e da nessuna parte si poteva saperlo.
+    """
+    if not pid:
+        return "senza processo che aspetta", True
+    p = (procs or {}).get(pid)
+    if p is None:
+        return "fantasma: chi aspettava non c'e' piu'", True
+    if p["ppid"] == 1:
+        return "la sessione che lo ha chiesto e' morta, il lavoro no", True
+    return "", False
+
+
+def rada(procs=None):
     """The heavy job queue: what holds a permit, what waits, what the judge said."""
     out = []
     state_path = os.path.join(RADA_HOME, "state.json")
@@ -331,15 +357,22 @@ def rada():
         if not tk:
             continue
         age = now - tk.get("enq", now)
+        nota, sospetto = _chi_aspetta(tk.get("pid"), procs)
+        dettaglio = f"biglietto {tid}"
+        if nota:
+            dettaglio = f"{nota}  ·  " + dettaglio
+        if tk.get("intent"):
+            dettaglio += "  ·  " + str(tk["intent"])[:60]
         out.append(_record(
             "rada", f"rada:{tid}", tk.get("show", "")[:70] or tid,
             stato="in coda",
             eta=age,
             rss=tk.get("need") or 0,
             dove=tk.get("project", "?"),
-            dettaglio=f"biglietto {tid}",
-            azione=f"rada force {tid}",
-            allarme=age > 600,
+            dettaglio=dettaglio,
+            azione=(f"faro spazio {_human_bytes(tk.get('need') or 0)}"
+                    if tk.get("need") else f"rada force {tid}"),
+            allarme=age > 600 or sospetto,
         ))
 
     pending = os.path.join(RADA_HOME, "pending")
@@ -614,7 +647,7 @@ def snapshot():
     rows += permanenti(procs, loaded, agents, ports)
     rows += pianificati(procs, loaded, agents)
     rows += pianificati_claude()
-    rows += rada()
+    rows += rada(procs)
     rows += sessioni(procs, cwd_map, ports, seen)
     rows += sparsi(procs, loaded, ports, seen)
     cartelle_vive = [cwd_map.get(s["pid"], "") for s in _live_sessions(procs)]

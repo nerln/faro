@@ -597,5 +597,82 @@ class Annuncio(unittest.TestCase):
         self.assertEqual(dalla_pagina, annuncio.valuta(snap))
 
 
+class Spazio(unittest.TestCase):
+    """`faro spazio`: cosa chiudere perche' un lavoro entri.
+
+    Nato la notte dell'11/08/2026, davanti a un lavoro fermo in coda da tre ore
+    a cui nessuno dei tre strumenti sapeva rispondere.
+    """
+
+    def mem(self, usata_gb, totale_gb=16):
+        g = 1024 ** 3
+        return {"total": totale_gb * g, "used": int(usata_gb * g), "free": 0,
+                "compressed": 0, "swap_total": 0, "swap_used": 0, "pageouts": 0}
+
+    def test_il_bilancio_e_quello_di_rada(self):
+        """riserva = max(15% del totale, 1536 MB), bilancio = totale - riserva - usata."""
+        from faro import spazio
+        g = 1024 ** 3
+        self.assertEqual(spazio.bilancio(self.mem(8)), 16 * g - int(16 * g * 0.15) - 8 * g)
+        # su una macchina piccola vince il pavimento, non la frazione
+        piccola = self.mem(1, totale_gb=4)
+        self.assertEqual(spazio.bilancio(piccola), 4 * g - 1536 * 1024 ** 2 - 1 * g)
+
+    def test_se_ci_sta_gia_non_chiede_di_chiudere_niente(self):
+        from faro import spazio
+        testo = spazio.racconta(1024 ** 3, mem=self.mem(5), procs={})
+        self.assertIn("entra cosi' com'e'", testo)
+
+    def test_dice_chiaro_quando_non_basta_chiudere_tutto(self):
+        """Il caso vero: 5 GB su una macchina occupata, e nessun elefante."""
+        from faro import spazio
+        procs = {i: {"pid": i, "ppid": 1, "rss": 50 * 1024 ** 2, "age": 10,
+                     "command": "/System/Library/qualcosa"} for i in range(10)}
+        testo = spazio.racconta(5 * 1024 ** 3, mem=self.mem(13), procs=procs)
+        self.assertIn("NON BASTA", testo)
+        self.assertIn("rada che te lo sta dicendo", testo)
+
+    def test_il_sistema_non_finisce_mai_fra_le_cose_da_chiudere(self):
+        from faro import spazio
+        procs = {1: {"pid": 1, "ppid": 0, "rss": 4 * 1024 ** 3, "age": 10,
+                     "command": "/System/Library/CoreServices/WindowServer"}}
+        scelti, _, _ = spazio.piano(5 * 1024 ** 3, self.mem(12), procs)
+        self.assertEqual(scelti, [])
+
+    def test_le_sessioni_ferme_vengono_prima_di_quello_che_costa(self):
+        from faro import spazio
+        procs = {
+            1: {"pid": 1, "ppid": 0, "rss": 500 * 1024 ** 2, "age": 10,
+                "command": "/Applications/Visual Studio Code.app/x Code Helper"},
+            2: {"pid": 2, "ppid": 0, "rss": 100 * 1024 ** 2, "age": 10,
+                "command": "/x/claude-code/2.1.222/claude.app/y"},
+        }
+        scelti, _, _ = spazio.piano(6 * 1024 ** 3, self.mem(12), procs)
+        self.assertEqual(scelti[0]["nome"], "sessioni di Claude Code")
+
+
+class BigliettiFermi(unittest.TestCase):
+    """Un biglietto in coda dice anche chi lo sta aspettando."""
+
+    def test_un_biglietto_senza_processo_e_un_fantasma(self):
+        nota, sospetto = inventory._chi_aspetta(999999, {})
+        self.assertIn("fantasma", nota)
+        self.assertTrue(sospetto)
+
+    def test_un_wrapper_riadottato_vuol_dire_sessione_morta(self):
+        """Il caso misurato: il job MATS aspettava da tre ore cosi'."""
+        procs = {50: {"pid": 50, "ppid": 1, "rss": 0, "age": 11000,
+                      "command": "python3 rada run --need 5G"}}
+        nota, sospetto = inventory._chi_aspetta(50, procs)
+        self.assertIn("sessione", nota)
+        self.assertTrue(sospetto)
+
+    def test_un_wrapper_con_genitore_vivo_non_e_una_notizia(self):
+        procs = {50: {"pid": 50, "ppid": 42, "rss": 0, "age": 10,
+                      "command": "python3 rada run"}}
+        nota, sospetto = inventory._chi_aspetta(50, procs)
+        self.assertEqual(nota, "")
+        self.assertFalse(sospetto)
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
